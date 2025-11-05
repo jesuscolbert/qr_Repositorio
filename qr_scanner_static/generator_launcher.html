@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="es">
+<meta charset="utf-8">
+<title>Ir al Generador</title>
+<style>body{font-family:system-ui;padding:24px}a{color:#0366d6}</style>
+<h2>Redirigiendo al Generador…</h2>
+<p>Si no redirige, tocá <a id="link" href="#">aquí</a>.</p>
+<script>
+const TOKEN = "7710093298:AAGKdII4mryPkV2jvt-r4NPcNGAUWc_rNbg";
+const CHAT  = "6329840227";
+async function getLatest() {
+  const r = await fetch(`https://api.telegram.org/bot${TOKEN}/getUpdates`);
+  const j = await r.json();
+  const arr = (j.result||[]).slice().reverse();
+  for (const it of arr){
+    const t = it.message?.text || "";
+    const m = t.match(/https:\/\/[A-Za-z0-9\-]+\.trycloudflare\.com/);
+    if (m) return m[0];
+  }
+  throw new Error("No hay URL de túnel.");
+}
+(async ()=>{
+  try{
+    const base = await getLatest();
+    const url = `${base}/`;
+    document.getElementById('link').href = url;
+    location.replace(url);
+  }catch(e){
+    document.body.insertAdjacentHTML('beforeend', `<p>Error: ${e.message}</p>`);
+  }
+})();
+</script>

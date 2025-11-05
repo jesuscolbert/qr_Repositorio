@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Escáner QR — Ventas</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <meta name="theme-color" content="#111827">
+  <style>
+    body{font-family:system-ui;margin:0;padding:16px;background:#0f172a;color:#e5e7eb}
+    h1{margin:0 0 10px}
+    .card{background:#111827;border:1px solid #374151;border-radius:14px;padding:16px;margin-bottom:16px}
+    button,input,select{padding:10px;border-radius:10px;border:1px solid #4b5563;background:#1f2937;color:#e5e7eb}
+    video{width:100%;max-height:50vh;background:#000;border-radius:12px;border:1px solid #374151}
+    .ok{color:#86efac}.bad{color:#fca5a5}.muted{opacity:.8}
+    .pill{display:inline-block;padding:4px 8px;border-radius:999px;border:1px solid #374151;margin-right:6px}
+    #productPanel{margin-top:12px;border-radius:10px;padding:12px;border:1px solid #374151;background:#0b1220}
+  </style>
+</head>
+<body>
+  <h1>Escáner de QR</h1>
+
+  <div class="card" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <select id="cameraSelect"></select>
+    <input id="qty" type="number" min="1" value="1" style="width:90px" title="Cantidad / scan"/>
+    <button id="btnStart">Iniciar</button>
+    <button id="btnStop">Detener</button>
+    <button id="btnSync">Sincronizar</button>
+    <span class="pill">Estado: <span id="netStatus">…</span></span>
+    <span class="pill">Cola: <span id="queueSize">0</span></span>
+  </div>
+
+  <div class="card">
+    <video id="preview" playsinline muted></video>
+    <p id="msg" class="muted">—</p>
+  </div>
+
+  <div class="card" id="productPanel" style="display:none">
+    <h3 id="pName">Producto</h3>
+    <p id="pCode" class="muted"></p>
+    <p>Precio: <b id="pPrice">0.00</b></p>
+    <p>Stock: <b id="pStock">0</b></p>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <label for="sellQty">Cantidad</label>
+      <input id="sellQty" type="number" min="1" value="1" style="width:90px"/>
+      <button id="btnSell">Vender</button>
+    </div>
+    <p id="pMsg" class="muted"></p>
+  </div>
+
+  <div class="card">
+    <h3>Token manual (fallback)</h3>
+    <input id="tokenInput" placeholder="pegar token aquí" style="width:70%"/>
+    <button id="btnManual">Procesar</button>
+  </div>
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js');
+    }
+  </script>
+  <script src="./scanner.js"></script>
+</body>
+</html>
