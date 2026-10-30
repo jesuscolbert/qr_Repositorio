@@ -50,7 +50,7 @@ jobs:
                   raise SystemExit('Falta configurar la firma estable en GitHub Secrets.')
               (target / name).write_bytes(base64.b64decode(value, validate=True))
           PY
-      - run: node --test tests/backend.test.cjs
+      - run: node --test tests/backend.test.cjs tests/lease.test.mjs
       - name: Probar decisiones entre cuatro teléfonos
         run: |
           mkdir -p .tools/quorum-tests

@@ -13,6 +13,7 @@ public final class PeerService extends Service {
     static volatile String failure="";
     static final TunnelHealth health=new TunnelHealth();
     private final ScheduledExecutorService tasks=Executors.newSingleThreadScheduledExecutor();
+    private final ScheduledExecutorService leaseTasks=Executors.newScheduledThreadPool(2);
     private volatile Process tunnel;
     private PowerManager.WakeLock awake;
     private volatile boolean stopped;
@@ -28,7 +29,7 @@ public final class PeerService extends Service {
             try{
                 PeerConfig config=new PeerConfig(new Vault(this).get("peerConfig"));
                 PeerEngine ready=new PeerEngine(this,config);
-                synchronized(PeerService.this){if(stopped){ready.close();return;}ready.start();engine=ready;startTunnel(config);}
+                synchronized(PeerService.this){if(stopped){ready.close();return;}ready.start();engine=ready;if(!config.shared)startTunnel(config);}
             }catch(Exception e){failure="No se pudo iniciar la red. Revisa el archivo de configuración y la compatibilidad del teléfono.";stopSelf();}
         });
         tasks.scheduleWithFixedDelay(()->{
@@ -36,10 +37,18 @@ public final class PeerService extends Service {
             try{
                 synchronized(PeerService.this){if(stopped)return;awake.acquire(10*60*1000L);}
                 PeerEngine current=engine;if(current==null)return;
-                if(tunnel==null||!tunnel.isAlive())startTunnel(current.config);
-                current.checkOwnIdentity();current.sync();
+                if(current.shared==null){if(tunnel==null||!tunnel.isAlive())startTunnel(current.config);current.checkOwnIdentity();}
+                current.sync();
             }catch(Exception e){failure="El túnel no pudo conectarse. Comprueba internet.";}
-        },2,15,TimeUnit.SECONDS);
+        },2,5,TimeUnit.SECONDS);
+        leaseTasks.scheduleWithFixedDelay(()->{PeerEngine e=engine;if(!stopped&&e!=null&&e.shared!=null)e.shared.coordinate();},0,5,TimeUnit.SECONDS);
+        leaseTasks.scheduleWithFixedDelay(()->{
+            synchronized(PeerService.this){
+                PeerEngine e=engine;if(stopped||e==null||e.shared==null)return;
+                if(e.shared.leading()){try{if(tunnel==null||!tunnel.isAlive())startTunnel(e.config);}catch(Exception error){failure="No se pudo abrir el túnel; el registro local sigue disponible.";}}
+                else {Process p=tunnel;tunnel=null;if(p!=null)p.destroy();}
+            }
+        },0,250,TimeUnit.MILLISECONDS);
     }
     private synchronized void startTunnel(PeerConfig config) throws Exception {
         if(stopped)return;
@@ -48,7 +57,7 @@ public final class PeerService extends Service {
         File dir=new File(getFilesDir(),"peer-tunnel");if(!dir.exists()&&!dir.mkdirs())throw new IOException("Directorio");
         File credentials=new File(dir,"credentials.json"),yaml=new File(dir,"config.yml");
         try(FileOutputStream out=new FileOutputStream(credentials)){out.write(config.raw.getJSONObject("tunnel").toString().getBytes(StandardCharsets.UTF_8));}
-        String text="tunnel: "+config.raw.getJSONObject("tunnel").getString("TunnelID")+"\ncredentials-file: "+credentials.getAbsolutePath()+"\nprotocol: http2\ningress:\n  - hostname: "+new java.net.URL(config.nodes.getJSONObject(config.node).getString("url")).getHost()+"\n    service: http://127.0.0.1:8787\n  - service: http_status:404\n";
+        String text="tunnel: "+config.raw.getJSONObject("tunnel").getString("TunnelID")+"\ncredentials-file: "+credentials.getAbsolutePath()+"\nprotocol: http2\ningress:\n  - hostname: "+new java.net.URL(config.shared?config.raw.getString("url"):config.nodes.getJSONObject(config.node).getString("url")).getHost()+"\n    service: http://127.0.0.1:8787\n  - service: http_status:404\n";
         try(FileOutputStream out=new FileOutputStream(yaml)){out.write(text.getBytes(StandardCharsets.UTF_8));}
         ProcessBuilder builder=new ProcessBuilder(binary.getAbsolutePath(),"tunnel","--config",yaml.getAbsolutePath(),"--no-autoupdate","run",config.raw.getJSONObject("tunnel").getString("TunnelID"));
         health.reset();builder.directory(dir);builder.environment().put("HOME",dir.getAbsolutePath());builder.redirectErrorStream(true);tunnel=builder.start();failure="";
@@ -57,5 +66,5 @@ public final class PeerService extends Service {
     }
     @Override public int onStartCommand(Intent intent,int flags,int id){return START_NOT_STICKY;}
     @Override public IBinder onBind(Intent intent){return null;}
-    @Override public synchronized void onDestroy(){stopped=true;tasks.shutdownNow();Process p=tunnel;if(p!=null)p.destroy();PeerEngine e=engine;engine=null;if(e!=null)e.close();if(awake!=null&&awake.isHeld())awake.release();super.onDestroy();}
+    @Override public synchronized void onDestroy(){stopped=true;tasks.shutdownNow();leaseTasks.shutdownNow();Process p=tunnel;if(p!=null)p.destroy();PeerEngine e=engine;engine=null;if(e!=null)e.close();if(awake!=null&&awake.isHeld())awake.release();super.onDestroy();}
 }

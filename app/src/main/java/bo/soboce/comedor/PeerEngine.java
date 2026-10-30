@@ -13,6 +13,7 @@ class PeerEngine implements QuorumLog.Network, AutoCloseable {
     final PeerConfig config;
     final PeerDatabase db;
     final OfflineLedger offline;
+    SharedNetwork shared;
     final String instance;
     volatile String identityWarning="";
     final String[] peerStates={"Sin comprobar","Sin comprobar","Sin comprobar","Sin comprobar"};
@@ -24,7 +25,7 @@ class PeerEngine implements QuorumLog.Network, AutoCloseable {
     volatile boolean syncing;
     volatile String state="Registro local disponible. Buscando teléfonos para sincronizar…";
     PeerEngine(Context context,PeerConfig config) throws Exception {this(context,config,"comedor-peers.db");}
-    PeerEngine(Context context,PeerConfig config,String databaseName) throws Exception {this.config=config;db=new PeerDatabase(context,config,databaseName);offline=new OfflineLedger(db,config);synchronized(db){String saved=db.meta("instance","");if(saved.isEmpty()){saved=UUID.randomUUID().toString();db.putMeta("instance",saved);}instance=saved;}}
+    PeerEngine(Context context,PeerConfig config,String databaseName) throws Exception {this.config=config;db=new PeerDatabase(context,config,databaseName);offline=new OfflineLedger(db,config);shared=config.shared?new SharedNetwork(this):null;synchronized(db){String saved=db.meta("instance","");if(saved.isEmpty()){saved=UUID.randomUUID().toString();db.putMeta("instance",saved);}instance=saved;}}
     void start() throws IOException {
         server=new ServerSocket();server.bind(new InetSocketAddress(InetAddress.getByName("127.0.0.1"),8787),16);
         Thread acceptor=new Thread(()->{
@@ -41,7 +42,9 @@ class PeerEngine implements QuorumLog.Network, AutoCloseable {
             for(String line:lines){String lower=line.toLowerCase(Locale.ROOT);PeerConfig.require(!lower.startsWith("transfer-encoding:"),"Codificación inválida.");if(lower.startsWith("content-length:")){PeerConfig.require(length==-1,"Longitud repetida.");length=Integer.parseInt(line.substring(line.indexOf(':')+1).trim());}}
             PeerConfig.require(length>0&&length<=1048576,"Solicitud demasiado grande.");byte[] bytes=new byte[length];int offset=0;
             while(offset<length){int n=in.read(bytes,offset,length-offset);if(n<0)throw new EOFException();offset+=n;}
-            JSONObject envelope=new JSONObject(new String(bytes,StandardCharsets.UTF_8));String payload=envelope.getString("payload"),nonce=envelope.getString("nonce");int source=envelope.getInt("source");long time=envelope.getLong("time");
+            JSONObject envelope=new JSONObject(new String(bytes,StandardCharsets.UTF_8));
+            if(shared!=null){send(s,200,shared.handle(envelope).toString());return;}
+            String payload=envelope.getString("payload"),nonce=envelope.getString("nonce");int source=envelope.getInt("source");long time=envelope.getLong("time");
             PeerConfig.require(source>=0&&source<4&&nonce.matches("[a-f0-9]{64}")&&Math.abs(System.currentTimeMillis()-time)<=120000,"Identidad o reloj inválido.");
             PeerConfig.require(config.verify(source,"request|"+config.cluster+"|"+source+"|"+time+"|"+nonce+"|"+payload,envelope.getString("signature")),"Acceso denegado.");
             synchronized(nonces){PeerConfig.require(!nonces.containsKey(nonce),"Solicitud repetida.");nonces.put(nonce,time);if(nonces.size()>2048)nonces.remove(nonces.keySet().iterator().next());}
@@ -87,6 +90,7 @@ class PeerEngine implements QuorumLog.Network, AutoCloseable {
     }
     @Override public void learn(int peer,QuorumLog.Decision d) throws Exception {rpc(peer,new JSONObject().put("method","learn").put("decision",PeerDatabase.encode(d)));}
     void sync(){
+        if(shared!=null){shared.sync();return;}
         synchronized(this){if(syncing)return;syncing=true;}
         try {
         int online=1,old=0;String warning="";
@@ -121,7 +125,7 @@ class PeerEngine implements QuorumLog.Network, AutoCloseable {
         if(!action.equals("scan"))throw new IllegalArgumentException("Los encargados se configuran al preparar la red.");
         JSONObject request=new JSONObject(original.toString());request.remove("token");
         if(!request.has("requestId"))request.put("requestId",UUID.randomUUID().toString());
-        return offline.scan(request,System.currentTimeMillis());
+        return shared!=null?shared.scan(request):offline.scan(request,System.currentTimeMillis());
     }
     static JSONObject replyForAttempt(JSONObject saved,String command) throws Exception {
         JSONObject reply=new JSONObject(saved.getJSONObject("reply").toString());

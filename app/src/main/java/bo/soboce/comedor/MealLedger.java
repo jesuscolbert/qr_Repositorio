@@ -22,16 +22,17 @@ final class MealLedger {
         catch(IllegalArgumentException e){reply=new JSONObject().put("ok",false).put("error",e.getMessage()).put("definitive",true);}
         return new JSONObject().put("request",req).put("actor",actor).put("reply",reply);
     }
-    JSONObject read(JSONObject request) throws Exception {synchronized(db){return handle(request,config.node,System.currentTimeMillis());}}
+    JSONObject read(JSONObject request) throws Exception {synchronized(db){return handle(request,config.shared?-1:config.node,System.currentTimeMillis());}}
     private JSONObject handle(JSONObject r,int actor,long when) throws Exception {
-        JSONObject op=config.nodes.getJSONObject(actor);String today=day(when),action=r.getString("action");boolean admin=op.getString("role").equals("admin");
+        JSONObject op=config.operator(actor);String today=day(when),action=r.getString("action");boolean admin=op.getString("role").equals("admin");
+        boolean all=config.shared && r.optBoolean("allPlants") && Arrays.asList("today","report","conflicts").contains(action);
         JSONArray plants=config.seed.getJSONArray("plants");
         if(action.equals("session")){
             JSONArray allowed=new JSONArray();for(int i=0;i<plants.length();i++)if(admin||plants.getString(i).equals(op.getString("plant")))allowed.put(plants.getString(i));
             return ok().put("operator",op.getString("name")).put("role",op.getString("role")).put("today",today).put("plants",allowed).put("p2p",true);
         }
         String plant=r.optString("plant");boolean known=false;for(int i=0;i<plants.length();i++)known|=plants.getString(i).equals(plant);
-        PeerConfig.require(known&&(admin||op.getString("plant").equals(plant)),"No tienes permiso para esta planta.");
+        PeerConfig.require(all||known&&(admin||op.getString("plant").equals(plant)),"No tienes permiso para esta planta.");
         if(action.equals("people")){
             JSONArray people=new JSONArray();for(JSONObject p:db.rows("people"))if(p.optBoolean("activo")&&p.getString("planta").equals(plant))people.put(new JSONObject().put("id",p.getString("id")).put("sap",p.optString("sap")).put("nombre",p.getString("nombre")).put("planta",plant).put("tipo",p.getString("tipo")));
             return ok().put("people",people);
@@ -39,8 +40,8 @@ final class MealLedger {
         if(action.equals("today")||action.equals("report")||action.equals("conflicts")){
             List<JSONObject> items=new ArrayList<>();double total=0;int conflicts=0;String month=r.optString("month");
             if(action.equals("report"))PeerConfig.require(month.matches("\\d{4}-(0[1-9]|1[0-2])"),"Mes inválido.");
-            for(JSONObject m:new OfflineLedger(db,config).records())if(m.getString("planta").equals(plant)&&(action.equals("conflicts")?!m.optString("revision").isEmpty():action.equals("today")?m.getString("fecha").equals(today):m.getString("fecha").startsWith(month+"-"))){items.add(m);total+=m.getDouble("precio");if(!m.optString("revision").isEmpty())conflicts++;}
-            if(!action.equals("report")){JSONArray recent=new JSONArray();for(int i=items.size()-1;i>=Math.max(0,items.size()-(action.equals("conflicts")?100:30));i--)recent.put(items.get(i));return ok().put("count",items.size()).put("total",total).put("items",recent).put("synced",db.applied()).put("conflicts",conflicts).put("pending",new OfflineLedger(db,config).pending());}
+            for(JSONObject m:new OfflineLedger(db,config).records())if((all||m.getString("planta").equals(plant))&&(action.equals("conflicts")?!m.optString("revision").isEmpty():action.equals("today")?m.getString("fecha").equals(today):m.getString("fecha").startsWith(month+"-"))){items.add(m);total+=m.getDouble("precio");if(!m.optString("revision").isEmpty())conflicts++;}
+            if(!action.equals("report")){JSONArray recent=new JSONArray();for(int i=items.size()-1;i>=Math.max(0,items.size()-(config.shared?500:action.equals("conflicts")?100:30));i--)recent.put(items.get(i));return ok().put("count",items.size()).put("total",total).put("items",recent).put("synced",db.applied()).put("conflicts",conflicts).put("pending",(config.shared?new SharedLedger(db,config).pending():new OfflineLedger(db,config).pending()));}
             String[] cols={"fecha","hora","persona","nombre","comida","planta","operador","precio","centroCosto","registro","origen","revision"};StringBuilder csv=new StringBuilder("\uFEFF"+String.join(",",cols));
             for(JSONObject row:items){csv.append("\r\n");for(int i=0;i<cols.length;i++){if(i>0)csv.append(',');String v=row.optString(cols[i]);if(v.matches("^[=+@-].*"))v="'"+v;csv.append('"').append(v.replace("\"","\"\"")).append('"');}}
             return ok().put("count",items.size()).put("csv",csv.toString());
@@ -71,7 +72,10 @@ final class MealLedger {
         throw new IllegalArgumentException("Configura los cuatro encargados mediante sus archivos de red.");
     }
     JSONObject scanRecord(JSONObject r,int actor,long when) throws Exception {
-        JSONObject op=config.nodes.getJSONObject(actor);String plant=r.optString("plant"),today=day(when);
+        return scanRecord(r,config.operator(actor),when);
+    }
+    JSONObject scanRecord(JSONObject r,JSONObject op,long when) throws Exception {
+        String plant=r.optString("plant"),today=day(when);
         boolean known=false;JSONArray plants=config.seed.getJSONArray("plants");for(int i=0;i<plants.length();i++)known|=plants.getString(i).equals(plant);
         PeerConfig.require(known&&(op.getString("role").equals("admin")||op.getString("plant").equals(plant)),"No tienes permiso para esta planta.");
             String qr=r.optString("qr"),meal=r.optString("meal");

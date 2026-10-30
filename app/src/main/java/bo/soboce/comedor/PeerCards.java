@@ -9,7 +9,7 @@ import java.util.*;
 final class PeerCards {
     private static final List<String> MEALS=Arrays.asList("desayuno","almuerzo","cena");
     static boolean local(String action){return Arrays.asList("session","people","today","report","conflicts","issue","visitor").contains(action);}
-    static boolean format(String qr){return qr!=null&&qr.length()<=2048&&qr.matches("SB2:[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+");}
+    static boolean format(String qr){return qr!=null&&qr.length()<=2048&&qr.matches("SB[23]:[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+");}
 
     static JSONObject request(PeerDatabase db,PeerConfig config,JSONObject request,long now) throws Exception {
         try {
@@ -22,13 +22,13 @@ final class PeerCards {
         JSONArray plants=config.seed.getJSONArray("plants");for(int i=0;i<plants.length();i++)if(plants.getString(i).equals(plant))return true;return false;
     }
     private static void issuerPlant(PeerConfig config,int issuer,String plant) throws Exception {
-        PeerConfig.require(issuer>=0&&issuer<4&&knownPlant(config,plant),"Planta o encargado inválidos.");
-        JSONObject op=config.nodes.getJSONObject(issuer);
+        PeerConfig.require((issuer>=0&&issuer<4||issuer==-1&&config.shared)&&knownPlant(config,plant),"Planta o encargado inválidos.");
+        JSONObject op=config.operator(issuer);
         PeerConfig.require(op.getString("role").equals("admin")||op.getString("plant").equals(plant),"Solo puedes emitir tarjetas de tu planta.");
     }
     private static JSONObject issue(PeerDatabase db,PeerConfig config,JSONObject r,long now) throws Exception {
-        String plant=r.optString("plant"),name,detail;issuerPlant(config,config.node,plant);
-        JSONObject body=new JSONObject().put("v",2).put("cluster",config.cluster).put("issuer",config.node).put("plant",plant).put("issued",now);
+        String plant=r.optString("plant"),name,detail;issuerPlant(config,config.shared?-1:config.node,plant);
+        JSONObject body=new JSONObject().put("v",config.shared?3:2).put("cluster",config.cluster).put("issuer",config.node).put("plant",plant).put("issued",now);
         if(r.getString("action").equals("issue")) {
             JSONObject p=db.get("people",r.optString("personId"));
             PeerConfig.require(p!=null&&p.optBoolean("activo")&&p.optString("planta").equals(plant)&&!p.optString("tipo").equals("VISITA"),"Trabajador activo no encontrado en esta planta.");
@@ -40,7 +40,8 @@ final class PeerCards {
             body.put("kind","visitor").put("id","VIS-"+PeerConfig.hash(document)).put("name",name).put("cost",cost).put("expires",expires).put("meals",meals);
             detail="Visita · "+plant+" · hasta "+expires;
         }
-        String data=body.toString();String qr="SB2:"+Base64.getUrlEncoder().withoutPadding().encodeToString(data.getBytes(StandardCharsets.UTF_8))+"."+Base64.getUrlEncoder().withoutPadding().encodeToString(Base64.getDecoder().decode(config.sign("card|"+config.cluster+"|"+data)));
+        if(config.shared)body.put("device",config.device).put("operator",config.operator(-1));
+        String data=body.toString();String qr=(config.shared?"SB3:":"SB2:")+Base64.getUrlEncoder().withoutPadding().encodeToString(data.getBytes(StandardCharsets.UTF_8))+"."+Base64.getUrlEncoder().withoutPadding().encodeToString(config.shared?config.mac("card|"+data).getBytes(StandardCharsets.US_ASCII):Base64.getDecoder().decode(config.sign("card|"+config.cluster+"|"+data)));
         PeerConfig.require(format(qr),"Los datos de la tarjeta son demasiado largos.");
         return MealLedger.ok().put("qr",qr).put("person",name).put("detail",detail).put("notice","Tarjeta creada en este teléfono. Las otras tarjetas de esta persona siguen vigentes y identifican a la misma persona. El control usa los consumos conocidos por cada teléfono.");
     }
@@ -62,9 +63,13 @@ final class PeerCards {
             String[] parts=qr.substring(4).split("\\.",-1);String body=new String(Base64.getUrlDecoder().decode(parts[0]),StandardCharsets.UTF_8);
             card=new JSONObject(body);
             String signature=Base64.getEncoder().encodeToString(Base64.getUrlDecoder().decode(parts[1]));
-            PeerConfig.require(card.getInt("v")==2&&config.cluster.equals(card.getString("cluster"))&&config.verify(card.getInt("issuer"),"card|"+config.cluster+"|"+body,signature),"QR alterado o de otra red.");
+            if(qr.startsWith("SB3:")){
+                PeerConfig.require(config.shared && card.getInt("v")==3 && config.cluster.equals(card.getString("cluster")) && PeerConfig.equal(config.mac("card|"+body),new String(Base64.getUrlDecoder().decode(parts[1]),StandardCharsets.US_ASCII)),"QR alterado o de otra red.");
+                JSONObject op=card.getJSONObject("operator");PeerConfig.require(knownPlant(config,card.getString("plant")) && (op.optString("role").equals("admin") || op.optString("plant").equals(card.getString("plant"))),"Planta no autorizada.");
+            }else {PeerConfig.require(card.getInt("v")==2&&config.cluster.equals(card.getString("cluster"))&&config.verify(card.getInt("issuer"),"card|"+config.cluster+"|"+body,signature),"QR alterado o de otra red.");
+                issuerPlant(config,card.getInt("issuer"),card.getString("plant"));
+            }
             PeerConfig.require(card.getLong("issued")>=0&&card.getLong("issued")<=when+120000,"Revisa la fecha del teléfono que emitió el QR.");
-            issuerPlant(config,card.getInt("issuer"),card.getString("plant"));
         }catch(Exception e){throw new IllegalArgumentException("QR inválido, alterado o emitido con una fecha incorrecta.");}
         String id=card.getString("id"),kind=card.optString("kind");
         JSONObject existing=db.get("people",id);

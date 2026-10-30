@@ -9,6 +9,7 @@ import java.io.*;
 final class BundledSetup {
     static final String ASSET="comedor-setup.json";
     static void install(Context context,Vault vault) throws Exception {
+        if(SharedSetup.install(context,vault))return;
         String text=vault.get("setupPending");
         if(text.isEmpty())try(InputStream in=context.getAssets().open(ASSET)){
             ByteArrayOutputStream bytes=new ByteArrayOutputStream();byte[] buffer=new byte[8192];int n;

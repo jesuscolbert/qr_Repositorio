@@ -17,6 +17,97 @@ import static org.junit.Assert.*;
 
 @RunWith(AndroidJUnit4.class)
 public class PeerDatabaseTest {
+    PeerConfig sharedConfig(int actor,String device) throws Exception {
+        JSONObject raw=new JSONObject(config.raw.toString());raw.remove("identityPrivate");
+        return new PeerConfig(raw.put("format","SOBOCE-SHARED-1").put("node",-1).put("device",device).put("networkKey","a".repeat(64)).put("url","https://comedor.example.com").put("coordinator","https://coord.example.com").put("operator",config.nodes.getJSONObject(actor)).toString());
+    }
+    JSONObject sharedRequest(int plant,String meal) throws Exception {return new JSONObject(scan(plant,"Planta "+plant,meal,UUID.randomUUID().toString())).getJSONObject("request");}
+    void elect(PeerEngine[] engines,int owner,long epoch) throws Exception {
+        long now=android.os.SystemClock.elapsedRealtime();
+        for(PeerEngine e:engines)e.shared.lease.update(new JSONObject().put("owner",engines[owner].config.device).put("boot",engines[owner].shared.lease.boot).put("epoch",epoch).put("remaining",30000),now,now);
+    }
+    @Test public void universalInstallGeneratesUniqueIdentityAndKeepsLegacyHistory() throws Exception {
+        long now=System.currentTimeMillis();JSONObject request=sharedRequest(0,"almuerzo");
+        assertEquals("accepted",new OfflineLedger(db,config).scan(request,now).getString("status"));
+        db.getWritableDatabase().setVersion(3);db.close();
+        Vault vault=new Vault(context);clearSetupVault(vault);vault.remove("sharedDevice");
+        JSONObject bundle=new JSONObject(sharedConfig(0,"b".repeat(64)).raw.toString()).put("format","SOBOCE-SHARED-BUNDLE-1");bundle.remove("device");bundle.remove("operator");bundle.remove("node");
+        try{
+            vault.put("peerConfig",config.raw.toString());SharedSetup.apply(vault,bundle.toString());PeerConfig updated=new PeerConfig(vault.get("peerConfig"));
+            assertTrue(updated.shared);assertEquals(0,updated.node);assertFalse(updated.raw.has("identityPrivate"));
+            db=new PeerDatabase(context,updated);assertEquals(1,new OfflineLedger(db,updated).records().size());
+            assertEquals("recovered",new SharedLedger(db,updated).scan(request,updated.operator(-1),now).getString("status"));
+            String first=updated.device;SharedSetup.apply(vault,bundle.toString());assertEquals(first,new PeerConfig(vault.get("peerConfig")).device);
+            clearSetupVault(vault);vault.remove("sharedDevice");SharedSetup.apply(vault,bundle.toString());assertNotEquals(first,new PeerConfig(vault.get("peerConfig")).device);assertEquals("yes",vault.get("needsProfile"));
+        }finally{clearSetupVault(vault);for(String key:new String[]{"sharedDevice","needsProfile","legacyPeerConfig"})vault.remove(key);}
+    }
+    @Test public void sharedCardsWorkEverywhereAndOldCardsStillWork() throws Exception {
+        PeerConfig a=sharedConfig(0,"b".repeat(64)),b=sharedConfig(1,"c".repeat(64));long now=System.currentTimeMillis();
+        context.deleteDatabase("shared-cards.db");try(PeerDatabase local=new PeerDatabase(context,a,"shared-cards.db")){
+            String qr=PeerCards.request(local,a,workerRequest("Planta 0","SAP-12345"),now).getString("qr");assertTrue(qr.startsWith("SB3:"));assertEquals("SAP-12345",PeerCards.resolve(local,b,qr,now).getString("id"));
+            String old=PeerCards.request(db,config,workerRequest("Planta 0","SAP-12345"),now).getString("qr");assertEquals("SAP-12345",PeerCards.resolve(local,b,old,now).getString("id"));
+            String visitor=PeerCards.request(local,a,visitorRequest("Planta 0",now),now).getString("qr");assertEquals("VISITA",PeerCards.resolve(local,b,visitor,now).getString("tipo"));
+            String[] parts=qr.substring(4).split("\\.");JSONObject body=new JSONObject(new String(Base64.getUrlDecoder().decode(parts[0]),StandardCharsets.UTF_8));body.put("id","SAP-99999");String fake="SB3:"+Base64.getUrlEncoder().withoutPadding().encodeToString(body.toString().getBytes(StandardCharsets.UTF_8))+"."+parts[1];
+            try{PeerCards.resolve(local,b,fake,now);fail("Tampered shared card");}catch(IllegalArgumentException expected){}
+        }finally{context.deleteDatabase("shared-cards.db");}
+    }
+    @Test public void sharedReplicationFailoverOfflineRejoinAndAllPlantFeed() throws Exception {
+        PeerEngine[] engines=new PeerEngine[4];final int[] leader={0};boolean[] online={true,true,true,true};
+        try{
+            for(int i=0;i<4;i++){
+                String name="shared-test-"+i+".db";context.deleteDatabase(name);PeerEngine e=new PeerEngine(context,sharedConfig(i,PeerConfig.hash("device"+i)),name);engines[i]=e;
+                e.shared=new SharedNetwork(e){@Override JSONObject rpc(JSONObject request) throws Exception {if(!online[leader[0]])throw new IOException("offline");return engines[leader[0]].shared.dispatch(new JSONObject(request.toString()));}};
+            }
+            elect(engines,0,1);
+            assertEquals("accepted",engines[1].request(sharedRequest(1,"almuerzo")).getString("status"));
+            assertEquals("duplicate",engines[2].request(sharedRequest(2,"almuerzo")).getString("status"));
+            for(PeerEngine e:engines)e.sync();for(PeerEngine e:engines)assertEquals(1,e.offline.records().size());
+            online[0]=false;assertEquals("accepted",engines[2].request(sharedRequest(2,"cena")).getString("status"));assertEquals(1,engines[2].shared.ledger.pending());
+            leader[0]=1;elect(engines,1,2);engines[2].sync();engines[3].sync();assertEquals(0,engines[2].shared.ledger.pending());
+            online[0]=true;engines[0].sync();
+            for(PeerEngine e:engines){assertEquals(2,e.offline.records().size());JSONObject feed=e.request(new JSONObject().put("action","today").put("plant",e.config.operator(-1).getString("plant")).put("allPlants",true));assertEquals(2,feed.getInt("count"));}
+            assertFalse(engines[0].shared.leading());assertTrue(engines[1].shared.leading());
+            assertEquals("duplicate",engines[0].request(sharedRequest(0,"cena")).getString("status"));
+        }finally{for(int i=0;i<4;i++){if(engines[i]!=null){engines[i].close();engines[i].db.close();}context.deleteDatabase("shared-test-"+i+".db");}}
+    }
+    @Test public void sharedPagesRejectTamperingAndPreserveOfflineConflicts() throws Exception {
+        PeerConfig a=sharedConfig(0,"b".repeat(64)),b=sharedConfig(1,"c".repeat(64));context.deleteDatabase("shared-a.db");context.deleteDatabase("shared-b.db");long now=System.currentTimeMillis();
+        try(PeerDatabase ad=new PeerDatabase(context,a,"shared-a.db");PeerDatabase bd=new PeerDatabase(context,b,"shared-b.db")){
+            SharedLedger al=new SharedLedger(ad,a),bl=new SharedLedger(bd,b);
+            al.scan(sharedRequest(0,"almuerzo"),a.operator(-1),now);bl.scan(sharedRequest(1,"almuerzo"),b.operator(-1),now);
+            JSONArray page=al.events(new JSONObject(),20);String value=page.getString(0);JSONObject forged=new JSONObject(value).put("signature","0".repeat(64));
+            try{bl.merge(new JSONArray().put(forged.toString()));fail("Bad MAC");}catch(IllegalArgumentException expected){}assertEquals(1,bl.vector().length());
+            bl.merge(page);bl.merge(page);al.merge(bl.events(al.vector(),20));
+            assertEquals(2,new OfflineLedger(ad,a).records().size());for(JSONObject row:new OfflineLedger(ad,a).records())assertEquals("POSIBLE DUPLICADO",row.getString("revision"));
+            for(int d=1;d<=45;d++)al.scan(sharedRequest(0,"cena"),a.operator(-1),now+d*86400000L);
+            int pages=0;while(true){JSONArray more=al.events(bl.vector(),20);if(more.length()==0)break;bl.merge(more);pages++;}assertEquals(3,pages);assertEquals(47,new OfflineLedger(bd,b).records().size());
+        }finally{context.deleteDatabase("shared-a.db");context.deleteDatabase("shared-b.db");}
+    }
+    @Test public void leaseUsesMonotonicDeadlineAndFencesLateResponses() throws Exception {
+        LeaderLease lease=new LeaderLease("b".repeat(64));JSONObject own=new JSONObject().put("owner",lease.device).put("boot",lease.boot).put("epoch",1).put("remaining",30000);
+        lease.update(own,1000,2000);assertTrue(lease.leading(2000));assertFalse(lease.leading(28000));
+        lease.update(own,1000,32000);assertFalse(lease.leading(32000));
+        JSONObject replacement=new JSONObject(own.toString()).put("owner","c".repeat(64)).put("epoch",2);lease.update(replacement,33000,33001);assertFalse(lease.leading(33001));
+        try{lease.update(own,34000,34001);fail("Old epoch resurrected");}catch(IllegalArgumentException expected){}
+    }
+    @Test public void sharedHttpAuthenticatesAndRejectsExpiredServer() throws Exception {
+        PeerConfig c=sharedConfig(0,"b".repeat(64));context.deleteDatabase("shared-http.db");PeerEngine e=new PeerEngine(context,c,"shared-http.db");
+        try{
+            elect(new PeerEngine[]{e},0,1);e.start();String nonce=PeerConfig.random(),payload="{\"method\":\"status\"}";long time=System.currentTimeMillis();
+            JSONObject envelope=new JSONObject().put("epoch",1).put("time",time).put("nonce",nonce).put("payload",payload).put("signature",c.mac("rpc|1|"+time+"|"+nonce+"|"+payload));
+            JSONObject result=SharedNetwork.http("http://127.0.0.1:8787/rpc",envelope,null);assertTrue(PeerConfig.equal(c.mac("reply|1|"+nonce+"|"+result.getString("payload")),result.getString("signature")));
+            try{SharedNetwork.http("http://127.0.0.1:8787/rpc",envelope,null);fail("Replay accepted");}catch(IOException expected){}
+            long now=android.os.SystemClock.elapsedRealtime();e.shared.lease.update(new JSONObject().put("owner","c".repeat(64)).put("boot",PeerConfig.random()).put("epoch",2).put("remaining",30000),now,now);
+            assertFalse(e.shared.leading());try{SharedNetwork.http("http://127.0.0.1:8787/rpc",envelope,null);fail("Stale server responded");}catch(IOException expected){}
+        }finally{e.close();e.db.close();context.deleteDatabase("shared-http.db");}
+    }
+    @Test public void uncertainRemoteWriteNeverFallsBackToSecondLocalGrant() throws Exception {
+        PeerConfig c=sharedConfig(0,"b".repeat(64));context.deleteDatabase("shared-uncertain.db");PeerEngine e=new PeerEngine(context,c,"shared-uncertain.db");
+        try{
+            JSONObject request=sharedRequest(0,"almuerzo");e.db.putMeta("remoteAttempt:"+request.getString("requestId"),"1");
+            JSONObject reply=e.request(request);assertFalse(reply.getBoolean("ok"));assertFalse(reply.getBoolean("definitive"));assertEquals(0,e.offline.records().size());
+        }finally{e.close();e.db.close();context.deleteDatabase("shared-uncertain.db");}
+    }
     Context context;PeerDatabase db;PeerConfig config;PeerConfig[] identities;
     @Before public void setup() throws Exception {
         context=InstrumentationRegistry.getInstrumentation().getTargetContext();context.deleteDatabase("comedor-peers.db");

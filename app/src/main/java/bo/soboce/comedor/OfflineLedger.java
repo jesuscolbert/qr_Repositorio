@@ -136,6 +136,7 @@ final class OfflineLedger {
         try(Cursor c=db.getReadableDatabase().rawQuery("SELECT actor,seq,record FROM offline_events ORDER BY actor,seq",null)){
             while(c.moveToNext())records.add(new JSONObject(c.getString(2)).put("registro",c.getInt(0)+":"+c.getLong(1)).put("origen",config.nodes.getJSONObject(c.getInt(0)).getString("name")));
         }
+        new SharedLedger(db,config).appendRecords(records);
         for(JSONObject r:records)counts.merge(r.getString("clave"),1,Integer::sum);
         for(JSONObject r:records)r.put("revision",counts.get(r.getString("clave"))>1?"POSIBLE DUPLICADO":"");
         records.sort(Comparator.comparing((JSONObject r)->r.optString("fecha")+" "+r.optString("hora")).thenComparing(r->r.optString("registro")));
