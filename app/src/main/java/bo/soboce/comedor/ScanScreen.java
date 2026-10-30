@@ -54,7 +54,7 @@ final class ScanScreen {
         resultBox.addView(new Design.Icon(activity,kind==ScanFeedback.Kind.ALLOWED?"check":"stop",fg),new LinearLayout.LayoutParams(d(76),d(76)));Design.space(resultBox,20);
         TextView title=Design.text(activity,ScanFeedback.title(kind),24,fg,true);title.setGravity(Gravity.CENTER);resultBox.addView(title);Design.space(resultBox,14);
         if(!reply.optString("person").isEmpty()){TextView name=Design.text(activity,reply.optString("person"),20,fg,true);name.setGravity(Gravity.CENTER);resultBox.addView(name);Design.space(resultBox,10);}
-        String description=kind==ScanFeedback.Kind.ALLOWED?Meals.title(meal)+" autorizada · puedes servir":kind==ScanFeedback.Kind.DUPLICATE?"Esta comida ya está registrada.\nNO ENTREGAR OTRA RACIÓN.":reply.optString("error","Comprueba la operación pendiente.");
+        String description=kind==ScanFeedback.Kind.ALLOWED?"Entrega de "+meal+" autorizada · puedes servir":kind==ScanFeedback.Kind.DUPLICATE?"Esta comida ya está registrada.\nNO ENTREGAR OTRA RACIÓN.":reply.optString("error","Comprueba la operación pendiente.");
         TextView detail=Design.text(activity,description,15,fg,false);detail.setGravity(Gravity.CENTER);resultBox.addView(detail);
         if(!reply.optString("time").isEmpty()){Design.space(resultBox,12);TextView time=Design.text(activity,reply.optString("plant")+" · "+reply.optString("time"),12,fg,false);time.setGravity(Gravity.CENTER);resultBox.addView(time);}
         Design.space(resultBox,20);

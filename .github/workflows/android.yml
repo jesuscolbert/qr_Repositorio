@@ -84,7 +84,8 @@ jobs:
           target: google_apis
           disable-animations: true
           script: |
-            gradle :app:connectedDebugAndroidTest --console=plain
+            mkdir -p app/build/reports/ui
+            gradle :app:connectedDebugAndroidTest --console=plain || { adb pull /sdcard/Download/soboce-design app/build/reports/ui/; exit 1; }
             adb install -r app/build/outputs/apk/pilot/app-pilot.apk
             adb shell am start -W -n bo.soboce.comedor.piloto/bo.soboce.comedor.MainActivity
             mkdir -p app/build/reports/ui

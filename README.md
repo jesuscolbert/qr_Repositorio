@@ -2,6 +2,18 @@
 
 Aplicación Android para encargados de comedor. Android 8 o posterior; teléfonos ARM64. Los usuarios presentan un QR físico o digital; no necesitan otra aplicación.
 
+## Diseño y atención continua — 1.6.0
+
+El menú usa tarjetas de colores para Desayuno, Almuerzo, Cena y Dieta. «Iniciar escaneo» abre una cámara continua: cada lectura registra directamente la comida y planta elegidas. Solo una respuesta de entrega guardada produce «ACCESO PERMITIDO» en verde, con marca de confirmación. Un duplicado o resultado recuperado muestra «YA REGISTRADO» en rojo, con aviso sonoro y vibración. No se afirma que la persona haya recibido físicamente dos raciones. El teléfono vuelve al lector después de 1,7 segundos en verde y 3,2 segundos ante un rechazo. Una tarjeta que permanece ante la cámara no genera lecturas nuevas continuamente: debe retirarse para volver a presentarla. Los avisos sonoros respetan la configuración de volumen del teléfono.
+
+Una respuesta incierta queda en ámbar y bloquea el escaneo hasta comprobar la operación pendiente. No se muestra verde ni se procesa otro QR mientras se espera confirmación. El identificador de solicitud se conserva ante pausa, reinicio o respuesta perdida. Salir del lector libera la cámara.
+
+Dieta reemplaza al almuerzo. Comparten la clave diaria de consumo, aunque la etiqueta del reporte conserva «dieta». Se usa la tarifa de almuerzo vigente. Un QR con almuerzo autorizado permite elegir dieta; una autorización de visitante exclusivamente para dieta no permite almuerzo normal. La opción no concede una cuarta ración adicional. Si equipos aislados registran dieta y almuerzo para la misma persona, ambas entregas se mantienen y se marcan como posible duplicado al sincronizar.
+
+Los reportes permiten elegir día o mes con calendario, muestran raciones, importe y desglose por las cuatro comidas y exportan CSV para Excel. El reporte diario muestra todos sus registros; el mensual muestra los últimos 100 y exporta todos. Una fecha imposible se rechaza. «Entregas de hoy» abre el reporte diario, con actualización automática. Los reportes siguen reflejando la copia local conocida por el teléfono.
+
+Actualizar todos los encargados a 1.6. La sincronización usa protocolo 5 para impedir que una versión antigua interprete Dieta como una ración adicional. Se conservan datos, QR, red y firma de instalación. El empaquetador produce `private/installer-1.6.0/SOBOCE-Comedor-1.6.0-Todos.apk` para todos. El código de Apps Script también incorpora Dieta y reporte diario; si se usa ese modo opcional, debe actualizarse su implementación por separado.
+
 ## APK única y entregas compartidas — 1.5.0
 
 La misma APK privada se instala en todos los teléfonos, encima de la versión anterior y sin borrar datos. Cada instalación genera un identificador aleatorio propio. Un teléfono nuevo pide solamente nombre del encargado y planta; una actualización conserva su perfil. Ya no se importan JSON ni se copian bases `.db`.

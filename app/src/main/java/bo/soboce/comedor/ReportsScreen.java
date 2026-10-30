@@ -20,13 +20,14 @@ final class ReportsScreen {
     String month(){return date.substring(0,7);}
     String heading(){return LocalDate.parse(date).format(DateTimeFormatter.ofPattern(period.equals("day")?"dd MMM yyyy":"MMMM yyyy",new Locale("es","BO")));}
     void render(){
+        loading=false;handler.removeCallbacks(refresh);
         a.screen("Reportes",all?"Todas las plantas · entregas compartidas":plant);page=a.page;
         LinearLayout segment=Design.row(a);for(String p:new String[]{"day","month"}){Button b=Design.button(a,p.equals("day")?"Diario":"Mensual",period.equals(p)?Design.BLUE:Color.WHITE,period.equals(p)?Color.WHITE:Design.MUTED,()->{if(loading)return;period=p;render();});LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);lp.setMargins(0,0,Design.dp(a,8),0);segment.addView(b,lp);}page.addView(segment);Design.space(page,14);
         calendar=Design.button(a,heading()+"  ▾",Color.WHITE,Design.INK,()->{if(loading)return;LocalDate day=LocalDate.parse(date);new DatePickerDialog(a,(view,y,m,d)->{date=LocalDate.of(y,m+1,d).toString();render();},day.getYear(),day.getMonthValue()-1,day.getDayOfMonth()).show();});page.addView(calendar,new LinearLayout.LayoutParams(-1,-2));Design.space(page,16);
         content=Design.column(a);page.addView(content);a.button("Exportar "+(period.equals("day")?"día":"mes")+" a Excel",this::export);a.button("Actualizar reporte",this::load);a.button("Volver",a::home);load();
     }
     JSONObject request(boolean preview){return a.obj("action","report","plant",plant,"allPlants",Boolean.toString(all),"period",period,"date",date,"month",month(),"preview",Boolean.toString(preview));}
-    void load(){if(loading||a.page!=page)return;handler.removeCallbacks(refresh);loading=true;a.api(request(true),r->{loading=false;if(a.page!=page||!a.success(r))return;draw(r);if(period.equals("day")&&date.equals(MealLedger.day(System.currentTimeMillis())))handler.postDelayed(refresh,5000);});}
+    void load(){if(loading||a.page!=page||a.isFinishing()||a.isDestroyed())return;handler.removeCallbacks(refresh);if(a.isBusy()){handler.postDelayed(refresh,150);return;}loading=true;a.api(request(true),r->{loading=false;if(a.page!=page||!a.success(r))return;draw(r);if(period.equals("day")&&date.equals(MealLedger.day(System.currentTimeMillis())))handler.postDelayed(refresh,5000);});}
     void draw(JSONObject r){
         content.removeAllViews();LinearLayout hero=Design.card(a,Design.INK,22);hero.addView(Design.text(a,period.equals("day")?"ENTREGAS DEL DÍA":"ENTREGAS DEL MES",11,Design.LIME,true));Design.space(hero,12);
         LinearLayout amount=Design.row(a);amount.addView(Design.text(a,Integer.toString(r.optInt("count")),48,Color.WHITE,true));TextView caption=Design.text(a,"raciones",15,0xFFB9C7DF,false);caption.setPadding(Design.dp(a,14),Design.dp(a,18),0,0);amount.addView(caption);hero.addView(amount);Design.space(hero,12);hero.addView(Design.text(a,Design.money(r.optDouble("total",0))+"  ·  importe registrado",15,Color.WHITE,false));content.addView(hero);Design.space(content,18);

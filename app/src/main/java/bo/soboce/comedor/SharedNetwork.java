@@ -84,7 +84,7 @@ class SharedNetwork {
             }
             if(!lease.known(SystemClock.elapsedRealtime())){updateState();return;}
             exchange();
-        }catch(Exception e){detail="Sin intercambio confirmado · se reintentará automáticamente";}
+        }catch(Exception e){detail=e instanceof IllegalArgumentException&&e.getMessage()!=null&&e.getMessage().startsWith("Actualiza")?"Actualiza todos los teléfonos a 1.6 para compartir Dieta":"Sin intercambio confirmado · se reintentará automáticamente";}
         finally{engine.syncing=false;updateState();}
     }
     synchronized void exchange() throws Exception {
