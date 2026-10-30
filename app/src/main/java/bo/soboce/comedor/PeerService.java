@@ -11,6 +11,7 @@ import java.util.concurrent.*;
 public final class PeerService extends Service {
     static volatile PeerEngine engine;
     static volatile String failure="";
+    static final TunnelHealth health=new TunnelHealth();
     private final ScheduledExecutorService tasks=Executors.newSingleThreadScheduledExecutor();
     private volatile Process tunnel;
     private PowerManager.WakeLock awake;
@@ -36,7 +37,7 @@ public final class PeerService extends Service {
                 synchronized(PeerService.this){if(stopped)return;awake.acquire(10*60*1000L);}
                 PeerEngine current=engine;if(current==null)return;
                 if(tunnel==null||!tunnel.isAlive())startTunnel(current.config);
-                current.sync();
+                current.checkOwnIdentity();current.sync();
             }catch(Exception e){failure="El túnel no pudo conectarse. Comprueba internet.";}
         },2,15,TimeUnit.SECONDS);
     }
@@ -50,9 +51,9 @@ public final class PeerService extends Service {
         String text="tunnel: "+config.raw.getJSONObject("tunnel").getString("TunnelID")+"\ncredentials-file: "+credentials.getAbsolutePath()+"\nprotocol: http2\ningress:\n  - hostname: "+new java.net.URL(config.nodes.getJSONObject(config.node).getString("url")).getHost()+"\n    service: http://127.0.0.1:8787\n  - service: http_status:404\n";
         try(FileOutputStream out=new FileOutputStream(yaml)){out.write(text.getBytes(StandardCharsets.UTF_8));}
         ProcessBuilder builder=new ProcessBuilder(binary.getAbsolutePath(),"tunnel","--config",yaml.getAbsolutePath(),"--no-autoupdate","run",config.raw.getJSONObject("tunnel").getString("TunnelID"));
-        builder.directory(dir);builder.environment().put("HOME",dir.getAbsolutePath());builder.redirectErrorStream(true);tunnel=builder.start();failure="";
+        health.reset();builder.directory(dir);builder.environment().put("HOME",dir.getAbsolutePath());builder.redirectErrorStream(true);tunnel=builder.start();failure="";
         final Process running=tunnel;
-        Thread drain=new Thread(()->{try(InputStream in=running.getInputStream()){byte[] bytes=new byte[4096];while(in.read(bytes)!=-1){/* Discard connector logs: no credentials or request data on disk. */}}catch(IOException ignored){}},"tunnel-output");drain.setDaemon(true);drain.start();
+        Thread drain=new Thread(()->{try(BufferedReader reader=new BufferedReader(new InputStreamReader(running.getInputStream(),StandardCharsets.UTF_8))){String line;while((line=reader.readLine())!=null)health.line(line);}catch(IOException ignored){}finally{if(!stopped&&tunnel==running)try{health.exited(running.waitFor());}catch(InterruptedException e){Thread.currentThread().interrupt();}}},"tunnel-output");drain.setDaemon(true);drain.start();
     }
     @Override public int onStartCommand(Intent intent,int flags,int id){return START_NOT_STICKY;}
     @Override public IBinder onBind(Intent intent){return null;}

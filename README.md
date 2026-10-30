@@ -2,6 +2,16 @@
 
 Aplicación Android nativa para encargados de comedor. Mínimo Android 8.0; el modo de teléfonos requiere ARM64. La cámara lee QR físicos o digitales. Ofrece dos modos independientes: Google Sheets con Apps Script, y una red de cuatro teléfonos con bases SQLite replicadas. No mezclar ambos registros durante un servicio: no existe sincronización automática entre Sheets y P2P.
 
+## Instaladores listos y diagnóstico — 1.4.0
+
+Se pueden preparar cuatro APK privadas, una por encargado, usando `scripts/package_installers.py <APK-compilada-en-GitHub>`. El empaquetador incorpora únicamente la configuración correspondiente a ese teléfono, conserva byte por byte el código compilado y los recursos originales, alinea el archivo y lo firma con la clave estable. No compila Android localmente. Los instaladores quedan en `private/installers-1.4.0`, no se suben a GitHub y contienen datos y credenciales privados. La APK pública sigue siendo genérica y no incluye padrón ni claves.
+
+Al instalar una APK preparada, la app aplica la identidad y crea la base SQLite automáticamente. No hay que importar un JSON o copiar una `.db`. Debe usarse un número diferente en cada equipo. Si una base vacía estaba configurada con otro número de la misma red, el instalador puede corregirlo; si contiene consumos, decisiones, votos o una entrega pendiente, conserva los datos y bloquea el cambio de identidad. Una operación interrumpida reanuda la preparación al volver a abrir la app.
+
+«Estado de la red» muestra el número de equipo, su URL, conexiones de Cloudflare y estado de cada compañero. Los registros del conector se traducen a mensajes limitados: no se muestran líneas crudas que puedan contener credenciales. Una comprobación autenticada del propio túnel advierte si responde otra instalación con la misma identidad; esa detección requiere que la otra instalación también envíe su identificador (1.4 o posterior). `/health` y `/` muestran únicamente que el servicio responde, sin padrón, consumos ni credenciales.
+
+Se mantienen los cuatro túneles independientes `comedor-1.colbertconsorcio.shop` a `comedor-4.colbertconsorcio.shop`, seleccionados automáticamente. Ningún teléfono es un servidor central obligatorio: los disponibles intercambian copias y retransmiten registros. Compartir la credencial de un túnel genera réplicas de entrada, no sincroniza sus bases ni garantiza a qué teléfono llega una petición. No se implementó una URL única con elección exclusiva de líder.
+
 ## Registro con un solo teléfono — piloto 1.3.0
 
 Un encargado puede registrar desayuno, almuerzo y cena con un solo teléfono, aunque no haya internet, los demás estén apagados o el servicio de sincronización esté detenido. La entrega se confirma después de guardar el consumo y su resultado en una transacción SQLite local. Cada teléfono bloquea un segundo consumo conocido de la misma persona, fecha de Bolivia y comida. Los reintentos y el reinicio recuperan el resultado sin autorizar otra ración.

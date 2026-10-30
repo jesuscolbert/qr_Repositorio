@@ -289,4 +289,55 @@ public class PeerDatabaseTest {
         db.close();db=new PeerDatabase(context,config);assertEquals(2,new OfflineLedger(db,config).records().size());
     }
 
+
+    void clearSetupVault(Vault vault){for(String key:new String[]{"peerConfig","mode","setupPending","pending"})vault.remove(key);}
+    @Test public void bundledInstallerConfiguresAnEmptyPhoneWithoutImportingAFile() throws Exception {
+        Vault vault=new Vault(context);clearSetupVault(vault);db.close();context.deleteDatabase("comedor-peers.db");
+        try{
+            BundledSetup.apply(context,vault,identities[1].raw.toString());
+            assertEquals(1,new PeerConfig(vault.get("peerConfig")).node);assertEquals("p2p",vault.get("mode"));assertEquals("",vault.get("setupPending"));
+            db=new PeerDatabase(context,identities[1]);assertEquals("1",db.meta("node",""));assertEquals(1,db.rows("people").size());
+        }finally{clearSetupVault(vault);}
+    }
+    @Test public void bundledInstallerRepairsDuplicatedIdentityOnlyWhenNoHistoryExists() throws Exception {
+        Vault vault=new Vault(context);clearSetupVault(vault);vault.put("peerConfig",config.raw.toString());db.close();
+        try{
+            BundledSetup.apply(context,vault,identities[1].raw.toString());db=new PeerDatabase(context,identities[1]);
+            assertEquals("1",db.meta("node",""));assertEquals(0,db.applied());
+            new OfflineLedger(db,identities[1]).scan(offlineRequest(1,"almuerzo"),1793361600000L);db.close();
+            try{BundledSetup.apply(context,vault,identities[2].raw.toString());fail("Historical identity changed");}catch(IllegalArgumentException expected){}
+            assertEquals(1,new PeerConfig(vault.get("peerConfig")).node);db=new PeerDatabase(context,identities[1]);assertEquals(1,new OfflineLedger(db,identities[1]).records().size());
+        }finally{clearSetupVault(vault);}
+    }
+    @Test public void interruptedBundledSetupResumesWithoutDiscardingData() throws Exception {
+        Vault vault=new Vault(context);clearSetupVault(vault);vault.put("peerConfig",config.raw.toString());vault.put("setupPending",identities[1].raw.toString());
+        db.putMeta("node","1");db.close();
+        try{
+            BundledSetup.install(context,vault);assertEquals(1,new PeerConfig(vault.get("peerConfig")).node);assertEquals("p2p",vault.get("mode"));
+            vault.put("setupPending",identities[1].raw.toString());vault.remove("mode");BundledSetup.install(context,vault);assertEquals("p2p",vault.get("mode"));
+            db=new PeerDatabase(context,identities[1]);assertEquals(1,db.rows("people").size());
+        }finally{clearSetupVault(vault);}
+    }
+    @Test public void tunnelDiagnosticsDoNotExposeCredentialLines() throws Exception {
+        TunnelHealth health=new TunnelHealth();health.line("ERR Unauthorized secret=DO-NOT-DISPLAY");assertFalse(health.message().contains("DO-NOT-DISPLAY"));
+        health.line("INF Registered tunnel connection connIndex=0 connection=private-value");assertTrue(health.message().contains("1 conexiones"));assertFalse(health.message().contains("private-value"));
+        health.line("ERR Connection terminated connIndex=0");assertFalse(health.message().contains("Túnel conectado"));health.exited(1);assertTrue(health.message().contains("código 1"));
+        assertFalse(PeerEngine.duplicateIdentity("one",new JSONObject().put("instance","two")).isEmpty());assertTrue(PeerEngine.duplicateIdentity("one",new JSONObject().put("instance","one")).isEmpty());
+    }
+    @Test public void publicHealthEndpointAndSignedRpcReachTheActualServer() throws Exception {
+        PeerEngine engine=new PeerEngine(context,config);engine.start();
+        try{
+            try(Socket socket=new Socket("127.0.0.1",8787)){
+                socket.setSoTimeout(5000);socket.getOutputStream().write("GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n".getBytes(StandardCharsets.US_ASCII));
+                String response=new String(socket.getInputStream().readAllBytes(),StandardCharsets.UTF_8);assertTrue(response.startsWith("HTTP/1.1 200"));assertTrue(response.contains("SOBOCE Comedor"));assertFalse(response.contains("identityPrivate"));
+            }
+            String nonce=PeerConfig.random(),payload=new JSONObject().put("method","status").put("protocol",3).toString();long now=System.currentTimeMillis();
+            JSONObject envelope=new JSONObject().put("source",1).put("time",now).put("nonce",nonce).put("payload",payload).put("signature",identities[1].sign("request|"+config.cluster+"|1|"+now+"|"+nonce+"|"+payload));byte[] body=envelope.toString().getBytes(StandardCharsets.UTF_8);
+            try(Socket socket=new Socket("127.0.0.1",8787)){
+                socket.setSoTimeout(5000);OutputStream out=socket.getOutputStream();out.write(("POST /rpc HTTP/1.1\r\nHost: localhost\r\nContent-Length: "+body.length+"\r\n\r\n").getBytes(StandardCharsets.US_ASCII));out.write(body);out.flush();
+                String response=new String(socket.getInputStream().readAllBytes(),StandardCharsets.UTF_8);assertTrue(response.startsWith("HTTP/1.1 200"));JSONObject reply=new JSONObject(response.substring(response.indexOf("\r\n\r\n")+4));assertTrue(config.verify(0,"reply|"+nonce+"|"+reply.getString("payload"),reply.getString("signature")));assertEquals(engine.instance,new JSONObject(reply.getString("payload")).getString("instance"));
+            }
+        }finally{engine.close();engine.db.close();}
+    }
+
 }
