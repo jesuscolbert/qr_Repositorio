@@ -145,9 +145,10 @@ public class PeerDatabaseTest {
     @Test public void olderProposersCannotFormAMixedVersionQuorum() throws Exception {
         PeerEngine engine=new PeerEngine(context,config);
         try{
-            assertEquals(2,engine.dispatch(new JSONObject().put("method","status")).getInt("protocol"));
+            assertEquals(3,engine.dispatch(new JSONObject().put("method","status")).getInt("protocol"));
             try{engine.dispatch(new JSONObject().put("method","prepare").put("slot",1).put("ballot",4));fail("Old proposer received a promise");}catch(IllegalArgumentException expected){}
-            assertTrue(engine.dispatch(new JSONObject().put("method","prepare").put("protocol",2).put("slot",1).put("ballot",4)).getBoolean("granted"));
+            try{engine.dispatch(new JSONObject().put("method","prepare").put("protocol",2).put("slot",1).put("ballot",4));fail("Legacy vote accepted");}catch(IllegalArgumentException expected){}
+            assertEquals(0,engine.dispatch(new JSONObject().put("method","events").put("protocol",3).put("after",new JSONArray("[0,0,0,0]"))).getJSONArray("items").length());
         }finally{engine.close();engine.db.close();}
     }
     @Test public void offlineVisitorQrCanBeReadByTheScanner() throws Exception {
@@ -178,4 +179,114 @@ public class PeerDatabaseTest {
             assertTrue("Android tunnel did not reach its origin: "+diagnostic,reached);
         }finally{process.destroy();origin.close();}
     }
+
+    JSONObject offlineRequest(int actor,String meal) throws Exception {return new JSONObject(scan(actor,"Planta "+actor,meal,UUID.randomUUID().toString())).getJSONObject("request");}
+    @Test public void singlePhoneRecordsAllMealsOfflineAndRecoversAfterRestart() throws Exception {
+        long now=1793361600000L;OfflineLedger ledger=new OfflineLedger(db,config);JSONObject lunch=offlineRequest(0,"almuerzo");
+        for(String meal:new String[]{"desayuno","almuerzo","cena"})assertEquals("accepted",ledger.scan(meal.equals("almuerzo")?lunch:offlineRequest(0,meal),now).getString("status"));
+        assertEquals(3,ledger.records().size());assertEquals(0,db.applied());assertEquals(3,ledger.pending());
+        db.close();db=new PeerDatabase(context,config);ledger=new OfflineLedger(db,config);
+        assertEquals("recovered",ledger.scan(lunch,now).getString("status"));
+        assertEquals("duplicate",ledger.scan(offlineRequest(0,"almuerzo"),now).getString("status"));
+        assertEquals(3,ledger.records().size());
+        JSONObject future=ledger.scan(offlineRequest(0,"almuerzo"),now+86400000L);assertEquals("accepted",future.getString("status"));
+        assertFalse(ledger.scan(offlineRequest(0,"cena"),now).getBoolean("ok"));
+        try{ledger.scan(new JSONObject(lunch.toString()).put("meal","cena"),now);fail("Request ID reused");}catch(IllegalArgumentException expected){}
+    }
+    @Test public void engineCanRegisterWithNetworkStopped() throws Exception {
+        PeerEngine engine=new PeerEngine(context,config);engine.close();
+        try{assertEquals("accepted",engine.request(offlineRequest(0,"almuerzo")).getString("status"));assertEquals(1,engine.offline.records().size());}
+        finally{engine.db.close();}
+    }
+    @Test public void knownHistoryAndVisitorRulesStillBlockOfflineDuplicates() throws Exception {
+        long now=1793361600000L;String id=UUID.randomUUID().toString();commit(1,scan(0,"Planta 0","almuerzo",id));
+        OfflineLedger ledger=new OfflineLedger(db,config);
+        assertEquals("duplicate",ledger.scan(offlineRequest(0,"almuerzo"),now).getString("status"));
+        JSONObject recovered=new JSONObject(scan(0,"Planta 0","almuerzo",id)).getJSONObject("request");
+        assertEquals("recovered",ledger.scan(recovered,now).getString("status"));
+        String qr=PeerCards.request(db,config,visitorRequest("Planta 0",now),now).getString("qr");
+        assertFalse(ledger.scan(offlineRequest(0,"cena").put("qr",qr),now).getBoolean("ok"));
+        assertFalse(ledger.scan(offlineRequest(0,"almuerzo").put("plant","Planta 1").put("qr",qr),now).getBoolean("ok"));
+        assertEquals("accepted",ledger.scan(offlineRequest(0,"almuerzo").put("qr",qr),now).getString("status"));
+        assertFalse(ledger.scan(offlineRequest(0,"almuerzo").put("qr",qr),now+86400000L).getBoolean("ok"));
+    }
+    @Test public void simultaneousScansInTwoDatabaseConnectionsAuthorizeOnlyOnce() throws Exception {
+        PeerDatabase second=new PeerDatabase(context,config);
+        java.util.concurrent.ExecutorService pool=java.util.concurrent.Executors.newFixedThreadPool(2);
+        java.util.concurrent.CountDownLatch start=new java.util.concurrent.CountDownLatch(1);
+        try{
+            java.util.concurrent.Future<String> a=pool.submit(()->{start.await();return new OfflineLedger(db,config).scan(offlineRequest(0,"almuerzo"),1793361600000L).getString("status");});
+            java.util.concurrent.Future<String> b=pool.submit(()->{start.await();return new OfflineLedger(second,config).scan(offlineRequest(0,"almuerzo"),1793361600000L).getString("status");});
+            start.countDown();List<String> replies=Arrays.asList(a.get(15,TimeUnit.SECONDS),b.get(15,TimeUnit.SECONDS));
+            assertTrue(replies.contains("accepted"));assertTrue(replies.contains("duplicate"));assertEquals(1,new OfflineLedger(db,config).records().size());
+        }finally{pool.shutdownNow();second.close();}
+    }
+    @Test public void signedReplicationIsIdempotentAtomicAndRejectsAlteredReceipts() throws Exception {
+        long now=1793361600000L;OfflineLedger origin=new OfflineLedger(db,config);
+        origin.scan(offlineRequest(0,"almuerzo"),now);origin.scan(offlineRequest(0,"cena"),now);
+        JSONArray events=origin.events(new JSONArray("[0,0,0,0]"),20);
+        context.deleteDatabase("offline-test.db");PeerDatabase other=new PeerDatabase(context,identities[1],"offline-test.db");
+        try{
+            OfflineLedger remote=new OfflineLedger(other,identities[1]);
+            try{remote.merge(new JSONArray().put(events.getString(1)));fail("Missing predecessor accepted");}catch(IllegalArgumentException expected){}
+            JSONObject envelope=new JSONObject(events.getString(1));JSONObject body=new JSONObject(envelope.getString("body"));body.getJSONObject("record").put("precio",0);envelope.put("body",body.toString());
+            try{remote.merge(new JSONArray().put(events.getString(0)).put(envelope.toString()));fail("Altered receipt accepted");}catch(IllegalArgumentException expected){}
+            assertEquals(0,remote.records().size());assertEquals(0,remote.vector().getLong(0));
+            remote.merge(events);remote.merge(events);assertEquals(2,remote.records().size());
+            assertEquals("duplicate",remote.scan(offlineRequest(1,"almuerzo"),now).getString("status"));
+            JSONObject divergent=config.command(events.getString(0));divergent.getJSONObject("record").put("nombre","Nombre cambiado");
+            try{remote.merge(new JSONArray().put(config.seal(divergent)));fail("Forked stream accepted");}catch(IllegalArgumentException expected){}
+            assertEquals(2,remote.records().size());
+        }finally{other.close();context.deleteDatabase("offline-test.db");}
+    }
+    @Test public void disconnectedPhonesConvergeAndPreserveBothConflictingDeliveries() throws Exception {
+        PeerEngine[] engines=new PeerEngine[4];boolean[] available={true,true,false,false};
+        for(int node=0;node<4;node++){
+            context.deleteDatabase("sync-test-"+node+".db");
+            engines[node]=new PeerEngine(context,identities[node],"sync-test-"+node+".db"){
+                @Override JSONObject rpc(int peer,JSONObject request) throws Exception {
+                    if(!available[config.node]||!available[peer])throw new IOException("Offline simulation");
+                    JSONObject wire=new JSONObject(request.toString());if(!wire.has("protocol"))wire.put("protocol",PROTOCOL);
+                    return new JSONObject(engines[peer].dispatch(wire).toString());
+                }
+            };
+        }
+        try{
+            long now=1793361600000L;
+            assertEquals("accepted",engines[0].offline.scan(offlineRequest(0,"almuerzo"),now).getString("status"));
+            assertEquals("accepted",engines[1].offline.scan(offlineRequest(1,"almuerzo"),now).getString("status"));
+            engines[1].sync();assertEquals(2,engines[0].offline.records().size());assertEquals(2,engines[1].offline.records().size());
+            available[0]=false;available[2]=true;available[3]=true;engines[2].sync();engines[3].sync();
+            assertEquals(2,engines[3].offline.records().size()); // Node 0's receipt was relayed while node 0 was off.
+            for(PeerEngine e:engines){
+                assertEquals(2,e.offline.records().size());for(JSONObject r:e.offline.records())assertEquals("POSIBLE DUPLICADO",r.getString("revision"));
+                assertEquals("duplicate",e.offline.scan(offlineRequest(e.config.node,"almuerzo"),now).getString("status"));
+            }
+            JSONObject report=new MealLedger(engines[0].db,identities[0]).read(new JSONObject().put("action","report").put("plant","Planta 0").put("month","2026-10"));
+            assertEquals(1,report.getInt("count"));assertTrue(report.getString("csv").contains("POSIBLE DUPLICADO"));
+            assertEquals(1,engines[0].offline.pending());available[0]=true;engines[0].sync();assertEquals(0,engines[0].offline.pending());
+            String canonical=engines[0].offline.records().toString();for(PeerEngine e:engines)assertEquals(canonical,e.offline.records().toString());
+        }finally{for(int i=0;i<4;i++){engines[i].close();engines[i].db.close();context.deleteDatabase("sync-test-"+i+".db");}}
+    }
+    @Test public void paginatedCatchupResumesAndNewPhoneReceivesOlderDays() throws Exception {
+        long now=1793361600000L;OfflineLedger origin=new OfflineLedger(db,config);
+        for(int day=0;day<45;day++)assertEquals("accepted",origin.scan(offlineRequest(0,"almuerzo"),now+day*86400000L).getString("status"));
+        context.deleteDatabase("page-test.db");PeerDatabase other=new PeerDatabase(context,identities[2],"page-test.db");
+        try{
+            OfflineLedger remote=new OfflineLedger(other,identities[2]);JSONArray first=origin.events(remote.vector(),20);assertEquals(20,first.length());remote.merge(first);
+            other.close();other=new PeerDatabase(context,identities[2],"page-test.db");remote=new OfflineLedger(other,identities[2]);remote.merge(first);
+            for(int i=0;i<3;i++){JSONArray page=origin.events(remote.vector(),20);remote.merge(page);}
+            assertEquals(45,remote.records().size());assertEquals(45,remote.vector().getLong(0));assertEquals(0,origin.events(remote.vector(),20).length());
+        }finally{other.close();context.deleteDatabase("page-test.db");}
+    }
+    @Test public void upgradeFromVersionTwoKeepsHistoryAndOfflineReceipts() throws Exception {
+        long now=1793361600000L;commit(1,scan(0,"Planta 0","desayuno",UUID.randomUUID().toString()));
+        String pending=config.seal(new JSONObject(scan(0,"Planta 0","cena",UUID.randomUUID().toString())));db.prepare(2,100);db.accept(2,100,pending);
+        db.getWritableDatabase().setVersion(2);db.close();db=new PeerDatabase(context,config);
+        assertEquals(1,db.applied());assertEquals(pending,db.prepare(2,104).value());
+        OfflineLedger ledger=new OfflineLedger(db,config);assertEquals("duplicate",ledger.scan(offlineRequest(0,"desayuno"),now).getString("status"));
+        assertEquals("accepted",ledger.scan(offlineRequest(0,"almuerzo"),now).getString("status"));
+        db.close();db=new PeerDatabase(context,config);assertEquals(2,new OfflineLedger(db,config).records().size());
+    }
+
 }

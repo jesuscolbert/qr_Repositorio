@@ -9,7 +9,10 @@ import java.util.*;
 final class PeerDatabase extends SQLiteOpenHelper implements QuorumLog.Storage {
     final PeerConfig config;
     PeerDatabase(Context context, PeerConfig config) throws Exception {
-        super(context,"comedor-peers.db",null,2); this.config=config;
+        this(context,config,"comedor-peers.db");
+    }
+    PeerDatabase(Context context, PeerConfig config,String databaseName) throws Exception {
+        super(context,databaseName,null,3); this.config=config;
         SQLiteDatabase db=getWritableDatabase();
         db.beginTransaction();
         try {
@@ -37,11 +40,13 @@ final class PeerDatabase extends SQLiteOpenHelper implements QuorumLog.Storage {
         db.execSQL("CREATE TABLE acceptors(slot INTEGER PRIMARY KEY,promised INTEGER NOT NULL,ballot INTEGER NOT NULL,value TEXT)");
         db.execSQL("CREATE TABLE decisions(slot INTEGER PRIMARY KEY,ballot INTEGER NOT NULL,value TEXT NOT NULL,proof TEXT NOT NULL)");
         for(String name:new String[]{"people","meals","results"}) db.execSQL("CREATE TABLE "+name+"(id TEXT PRIMARY KEY,json TEXT NOT NULL)");
+        OfflineLedger.create(db);
     }
     @Override public void onUpgrade(SQLiteDatabase db,int old,int version){
-        if(old!=1||version!=2)throw new IllegalStateException("Se requiere migración sin pérdida de datos.");
+        if(old<1||old>2||version!=3)throw new IllegalStateException("Se requiere migración sin pérdida de datos.");
+        OfflineLedger.create(db);
         // The constructor replays after SQLiteOpenHelper has finished opening the database.
-        db.execSQL("DELETE FROM meta WHERE k='projectionVersion'");
+        if(old==1)db.execSQL("DELETE FROM meta WHERE k='projectionVersion'");
     }
     String meta(String key,String fallback){try(Cursor c=getReadableDatabase().rawQuery("SELECT v FROM meta WHERE k=?",new String[]{key})){return c.moveToFirst()?c.getString(0):fallback;}}
     void putMeta(String key,String value){ContentValues cv=new ContentValues();cv.put("k",key);cv.put("v",value);getWritableDatabase().insertWithOnConflict("meta",null,cv,SQLiteDatabase.CONFLICT_REPLACE);}

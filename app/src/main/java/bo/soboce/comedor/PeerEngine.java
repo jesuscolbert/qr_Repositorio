@@ -8,18 +8,20 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
 
-final class PeerEngine implements QuorumLog.Network, AutoCloseable {
-    static final int PROTOCOL=2;
+class PeerEngine implements QuorumLog.Network, AutoCloseable {
+    static final int PROTOCOL=3;
     final PeerConfig config;
     final PeerDatabase db;
-    final QuorumLog consensus;
+    final OfflineLedger offline;
     private final ExecutorService clients=new ThreadPoolExecutor(4,4,0L,TimeUnit.MILLISECONDS,new ArrayBlockingQueue<>(12),new ThreadPoolExecutor.AbortPolicy());
     private final Map<String,Long> nonces=new LinkedHashMap<>();
     private ServerSocket server;
     volatile boolean closed;
     volatile int connected=1;
-    volatile String state="Iniciando conexión con los demás teléfonos…";
-    PeerEngine(Context context,PeerConfig config) throws Exception {this.config=config;db=new PeerDatabase(context,config);consensus=new QuorumLog(config.node,db,this);}
+    volatile boolean syncing;
+    volatile String state="Registro local disponible. Buscando teléfonos para sincronizar…";
+    PeerEngine(Context context,PeerConfig config) throws Exception {this(context,config,"comedor-peers.db");}
+    PeerEngine(Context context,PeerConfig config,String databaseName) throws Exception {this.config=config;db=new PeerDatabase(context,config,databaseName);offline=new OfflineLedger(db,config);}
     void start() throws IOException {
         server=new ServerSocket();server.bind(new InetSocketAddress(InetAddress.getByName("127.0.0.1"),8787),16);
         Thread acceptor=new Thread(()->{
@@ -48,20 +50,16 @@ final class PeerEngine implements QuorumLog.Network, AutoCloseable {
     }
     JSONObject dispatch(JSONObject r) throws Exception {
         String method=r.getString("method");
-        if(method.equals("status"))return new JSONObject().put("time",System.currentTimeMillis()).put("applied",db.applied()).put("protocol",PROTOCOL);
-        PeerConfig.require(r.optInt("protocol",1)==PROTOCOL,"Actualiza la APK de este teléfono antes de registrar consumos.");
+        if(method.equals("status"))return new JSONObject().put("time",System.currentTimeMillis()).put("applied",db.applied()).put("protocol",PROTOCOL).put("vector",offline.vector());
+        // Historical decisions remain readable during migration; no new quorum votes are issued.
         if(method.equals("history"))return new JSONObject().put("items",db.history(r.getLong("after"),20));
-        if(method.equals("prepare")){
-            var p=db.prepare(r.getLong("slot"),r.getLong("ballot"));return new JSONObject().put("granted",p.granted()).put("promised",p.promised()).put("accepted",p.acceptedBallot()).put("value",p.value()==null?JSONObject.NULL:p.value());
-        }
-        if(method.equals("accept")){
-            var v=db.accept(r.getLong("slot"),r.getLong("ballot"),r.getString("value"));return new JSONObject().put("accepted",v!=null).put("node",config.node).put("signature",v==null?"":v.signature());
-        }
-        if(method.equals("learn")){db.learn(PeerDatabase.decode(r.getJSONObject("decision")));return MealLedger.ok();}
+        PeerConfig.require(r.optInt("protocol",1)==PROTOCOL,"Actualiza este teléfono para sincronizar consumos sin conexión.");
+        if(method.equals("events"))return new JSONObject().put("items",offline.events(r.getJSONArray("after"),20));
+        if(method.equals("merge")){offline.merge(r.getJSONArray("items"));return new JSONObject().put("vector",offline.vector());}
         throw new IOException("Método inválido.");
     }
     JSONObject rpc(int peer,JSONObject request) throws Exception {
-        if(closed)throw new IOException("Red detenida.");request.put("protocol",PROTOCOL);if(peer==config.node)return dispatch(request);
+        if(closed)throw new IOException("Red detenida.");if(!request.has("protocol"))request.put("protocol",PROTOCOL);if(peer==config.node)return dispatch(request);
         String nonce=PeerConfig.random(),payload=request.toString();long now=System.currentTimeMillis();
         JSONObject envelope=new JSONObject().put("source",config.node).put("time",now).put("nonce",nonce).put("payload",payload).put("signature",config.sign("request|"+config.cluster+"|"+config.node+"|"+now+"|"+nonce+"|"+payload));
         HttpURLConnection c=(HttpURLConnection)new URL(config.nodes.getJSONObject(peer).getString("url")+"/rpc").openConnection();
@@ -78,39 +76,42 @@ final class PeerEngine implements QuorumLog.Network, AutoCloseable {
         if(!r.getBoolean("accepted"))return null;PeerConfig.require(r.getInt("node")==peer&&config.validVote(peer,slot,ballot,value,r.getString("signature")),"Voto inválido.");return new QuorumLog.Vote(peer,r.getString("signature"));
     }
     @Override public void learn(int peer,QuorumLog.Decision d) throws Exception {rpc(peer,new JSONObject().put("method","learn").put("decision",PeerDatabase.encode(d)));}
-    synchronized void sync(){
-        int online=1;
+    void sync(){
+        synchronized(this){if(syncing)return;syncing=true;}
+        try {
+        int online=1,old=0;String warning="";
         for(int peer=0;peer<4&&!closed;peer++)if(peer!=config.node)try{
             JSONObject status=rpc(peer,new JSONObject().put("method","status"));long remote=status.getLong("applied");
-            if(Math.abs(System.currentTimeMillis()-status.getLong("time"))>60000)continue;
-            if(status.optInt("protocol",1)==PROTOCOL)online++;
             for(int page=0;page<32&&db.applied()<remote;page++){
-                long before=db.applied();JSONArray items=rpc(peer,new JSONObject().put("method","history").put("after",before)).getJSONArray("items");
+                long before=db.applied();JSONArray items=rpc(peer,new JSONObject().put("method","history").put("protocol",2).put("after",before)).getJSONArray("items");
                 for(int i=0;i<items.length();i++)db.learn(PeerDatabase.decode(items.getJSONObject(i)));if(db.applied()==before)break;
             }
-        }catch(Exception ignored){/* Next cycle resumes at the last durable applied slot. */}
-        connected=online;state=online+"/4 teléfonos · "+db.applied()+" operaciones sincronizadas"+(online<3?" · Entregas bloqueadas":"");
+            if(status.optInt("protocol",1)!=PROTOCOL){old++;continue;}
+            online++;
+            for(int page=0;page<32&&!closed;page++){
+                JSONArray items=rpc(peer,new JSONObject().put("method","events").put("after",offline.vector())).getJSONArray("items");
+                if(items.length()==0)break;offline.merge(items);
+            }
+            JSONArray remoteVector=status.getJSONArray("vector");
+            for(int page=0;page<32&&!closed;page++){
+                JSONArray items=offline.events(remoteVector,20);if(items.length()==0)break;
+                remoteVector=rpc(peer,new JSONObject().put("method","merge").put("items",items)).getJSONArray("vector");
+            }
+            offline.acknowledge(peer,remoteVector);
+        }catch(IllegalArgumentException e){warning=" · Hay registros incompatibles; revisa las identidades de los equipos.";}
+         catch(Exception ignored){/* Stored receipts remain available locally; the next cycle retries. */}
+        connected=online;
+        try{state=online+"/4 teléfonos disponibles · "+offline.pending()+" entregas locales pendientes de llegar a todos"+(old>0?" · "+old+" requieren actualizar APK":"")+warning;}
+        catch(Exception e){state="Registro local disponible. No se pudo consultar la sincronización.";}
+        }finally{syncing=false;}
     }
     JSONObject request(JSONObject original) throws Exception {
         String action=original.getString("action");
         if(PeerCards.local(action))return PeerCards.request(db,config,original,System.currentTimeMillis());
         if(!action.equals("scan"))throw new IllegalArgumentException("Los encargados se configuran al preparar la red.");
-        JSONObject r=new JSONObject(original.toString());r.remove("token");
-        if(!r.has("requestId"))r.put("requestId",UUID.randomUUID().toString());
-        PeerConfig.require(r.getString("requestId").matches("[a-f0-9-]{36}"),"Solicitud inválida.");
-        JSONObject existing=db.get("results",r.getString("requestId"));
-        if(existing!=null){
-            JSONObject old=existing.getJSONObject("request");
-            PeerConfig.require(existing.getInt("actor")==config.node&&old.getString("action").equals(action)&&old.optString("qr").equals(r.optString("qr"))&&old.optString("meal").equals(r.optString("meal"))&&old.optString("plant").equals(r.optString("plant")),"Solicitud incompatible.");
-            return replyForAttempt(existing,null);
-        }
-        // A wrong date on one phone must not create a different daily meal key.
-        int clocks=0;long now=System.currentTimeMillis();String today=MealLedger.day(now);
-        for(int peer=0;peer<4;peer++)try{JSONObject status=rpc(peer,new JSONObject().put("method","status"));long time=status.getLong("time");if(status.optInt("protocol",1)==PROTOCOL&&Math.abs(now-time)<=60000&&MealLedger.day(time).equals(today))clocks++;}catch(Exception ignored){}
-        if(clocks<3)return new JSONObject().put("ok",false).put("definitive",false).put("error","Para registrar comidas se requieren 3 teléfonos con esta actualización, conectados y con fecha automática correcta. Puedes seguir creando y compartiendo QR con este teléfono solamente.");
-        String command=config.seal(new JSONObject().put("request",r).put("actor",config.node).put("time",now).put("attempt",UUID.randomUUID().toString()));consensus.append(command);
-        JSONObject result=db.get("results",r.getString("requestId"));if(result==null)throw new IOException("Sin confirmación.");
-        return replyForAttempt(result,command);
+        JSONObject request=new JSONObject(original.toString());request.remove("token");
+        if(!request.has("requestId"))request.put("requestId",UUID.randomUUID().toString());
+        return offline.scan(request,System.currentTimeMillis());
     }
     static JSONObject replyForAttempt(JSONObject saved,String command) throws Exception {
         JSONObject reply=new JSONObject(saved.getJSONObject("reply").toString());

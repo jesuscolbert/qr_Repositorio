@@ -13,6 +13,7 @@ final class MealLedger {
     private static final List<String> MEALS=Arrays.asList("desayuno","almuerzo","cena");
     MealLedger(PeerDatabase db,PeerConfig config){this.db=db;this.config=config;}
     static String day(long time){return Instant.ofEpochMilli(time).atZone(ZONE).toLocalDate().toString();}
+    static String time(long when){return Instant.ofEpochMilli(when).atZone(ZONE).format(DateTimeFormatter.ofPattern("HH:mm:ss"));}
     static JSONObject ok() throws JSONException{return new JSONObject().put("ok",true);}
     JSONObject execute(JSONObject command) throws Exception {
         JSONObject req=command.getJSONObject("request"), reply;
@@ -35,35 +36,20 @@ final class MealLedger {
             JSONArray people=new JSONArray();for(JSONObject p:db.rows("people"))if(p.optBoolean("activo")&&p.getString("planta").equals(plant))people.put(new JSONObject().put("id",p.getString("id")).put("sap",p.optString("sap")).put("nombre",p.getString("nombre")).put("planta",plant).put("tipo",p.getString("tipo")));
             return ok().put("people",people);
         }
-        if(action.equals("today")||action.equals("report")){
-            List<JSONObject> items=new ArrayList<>();double total=0;String month=r.optString("month");
+        if(action.equals("today")||action.equals("report")||action.equals("conflicts")){
+            List<JSONObject> items=new ArrayList<>();double total=0;int conflicts=0;String month=r.optString("month");
             if(action.equals("report"))PeerConfig.require(month.matches("\\d{4}-(0[1-9]|1[0-2])"),"Mes inválido.");
-            for(JSONObject m:db.rows("meals"))if(m.getString("planta").equals(plant)&&(action.equals("today")?m.getString("fecha").equals(today):m.getString("fecha").startsWith(month+"-"))){items.add(m);total+=m.getDouble("precio");}
-            if(action.equals("today")){JSONArray recent=new JSONArray();for(int i=items.size()-1;i>=Math.max(0,items.size()-30);i--)recent.put(items.get(i));return ok().put("count",items.size()).put("total",total).put("items",recent).put("synced",db.applied());}
-            String[] cols={"fecha","hora","persona","nombre","comida","planta","operador","precio","centroCosto"};StringBuilder csv=new StringBuilder("\uFEFF"+String.join(",",cols));
+            for(JSONObject m:new OfflineLedger(db,config).records())if(m.getString("planta").equals(plant)&&(action.equals("conflicts")?!m.optString("revision").isEmpty():action.equals("today")?m.getString("fecha").equals(today):m.getString("fecha").startsWith(month+"-"))){items.add(m);total+=m.getDouble("precio");if(!m.optString("revision").isEmpty())conflicts++;}
+            if(!action.equals("report")){JSONArray recent=new JSONArray();for(int i=items.size()-1;i>=Math.max(0,items.size()-(action.equals("conflicts")?100:30));i--)recent.put(items.get(i));return ok().put("count",items.size()).put("total",total).put("items",recent).put("synced",db.applied()).put("conflicts",conflicts).put("pending",new OfflineLedger(db,config).pending());}
+            String[] cols={"fecha","hora","persona","nombre","comida","planta","operador","precio","centroCosto","registro","origen","revision"};StringBuilder csv=new StringBuilder("\uFEFF"+String.join(",",cols));
             for(JSONObject row:items){csv.append("\r\n");for(int i=0;i<cols.length;i++){if(i>0)csv.append(',');String v=row.optString(cols[i]);if(v.matches("^[=+@-].*"))v="'"+v;csv.append('"').append(v.replace("\"","\"\"")).append('"');}}
             return ok().put("count",items.size()).put("csv",csv.toString());
         }
         if(action.equals("scan")){
-            String qr=r.optString("qr"),meal=r.optString("meal");
-            PeerConfig.require((qr.matches("SB1:[a-f0-9]{64}")||PeerCards.format(qr))&&MEALS.contains(meal),"QR o comida inválidos.");
-            String hash=PeerConfig.hash(qr);JSONObject person=null;
-            if(PeerCards.format(qr))person=PeerCards.resolve(db,config,qr,when);
-            else for(JSONObject p:db.rows("people"))if(p.optString("qrHash").equals(hash)){person=p;break;}
-            PeerConfig.require(person!=null,"QR revocado o desconocido.");JSONObject p=person;
-            PeerConfig.require(p.optBoolean("activo"),"Persona inactiva.");
-            PeerConfig.require(p.optString("vence").isEmpty()||p.getString("vence").compareTo(today)>=0,"Autorización vencida.");
-            PeerConfig.require(Arrays.asList(p.optString("comidas").split(",")).contains(meal),"Comida no autorizada.");
-            PeerConfig.require(!p.optString("tipo").equals("VISITA")||p.getString("planta").equals(plant),"Visita autorizada en otra planta.");
-            String key=p.getString("id")+"|"+today+"|"+meal;JSONObject previous=db.get("meals",key);
-            if(previous!=null)return ok().put("status","duplicate").put("message","Ya consumió esta comida.").put("person",p.getString("nombre")).put("plant",previous.getString("planta")).put("time",previous.getString("hora"));
-            JSONObject rate=null;JSONArray rates=config.seed.getJSONArray("rates");
-            for(int i=0;i<rates.length();i++){JSONObject x=rates.getJSONObject(i);if(x.getString("desde").compareTo(today)<=0&&(rate==null||x.getString("desde").compareTo(rate.getString("desde"))>0))rate=x;}
-            PeerConfig.require(rate!=null&&Double.isFinite(rate.optDouble(meal))&&rate.optDouble(meal)>=0,"Falta una tarifa válida.");
-            String time=Instant.ofEpochMilli(when).atZone(ZONE).format(DateTimeFormatter.ofPattern("HH:mm:ss"));
-            JSONObject record=new JSONObject().put("clave",key).put("solicitud",r.getString("requestId")).put("persona",p.getString("id")).put("nombre",p.getString("nombre")).put("fecha",today).put("comida",meal).put("planta",plant).put("operador",op.getString("name")).put("hora",time).put("precio",rate.getDouble(meal)).put("centroCosto",p.optString("centroCosto")).put("qrHash",hash);
+            JSONObject record=scanRecord(r,actor,when);String key=record.getString("clave");JSONObject previous=db.get("meals",key);
+            if(previous!=null)return ok().put("status","duplicate").put("message","Ya consumió esta comida.").put("person",record.getString("nombre")).put("plant",previous.getString("planta")).put("time",previous.getString("hora"));
             db.save("meals",key,record);
-            return ok().put("status","accepted").put("message","Entrega confirmada por la red de teléfonos.").put("person",p.getString("nombre")).put("plant",plant).put("time",time);
+            return ok().put("status","accepted").put("message","Entrega confirmada por la red de teléfonos.").put("person",record.getString("nombre")).put("plant",record.getString("planta")).put("time",record.getString("hora"));
         }
         if(action.equals("issue")){
             PeerConfig.require(admin,"Solo administración puede emitir QR de trabajadores.");JSONObject p=db.get("people",r.optString("personId"));
@@ -83,5 +69,27 @@ final class MealLedger {
             return ok().put("qr",qr).put("person",name).put("detail","Visita · "+plant+" · hasta "+expires);
         }
         throw new IllegalArgumentException("Configura los cuatro encargados mediante sus archivos de red.");
+    }
+    JSONObject scanRecord(JSONObject r,int actor,long when) throws Exception {
+        JSONObject op=config.nodes.getJSONObject(actor);String plant=r.optString("plant"),today=day(when);
+        boolean known=false;JSONArray plants=config.seed.getJSONArray("plants");for(int i=0;i<plants.length();i++)known|=plants.getString(i).equals(plant);
+        PeerConfig.require(known&&(op.getString("role").equals("admin")||op.getString("plant").equals(plant)),"No tienes permiso para esta planta.");
+            String qr=r.optString("qr"),meal=r.optString("meal");
+            PeerConfig.require((qr.matches("SB1:[a-f0-9]{64}")||PeerCards.format(qr))&&MEALS.contains(meal),"QR o comida inválidos.");
+            String hash=PeerConfig.hash(qr);JSONObject person=null;
+            if(PeerCards.format(qr))person=PeerCards.resolve(db,config,qr,when);
+            else for(JSONObject p:db.rows("people"))if(p.optString("qrHash").equals(hash)){person=p;break;}
+            PeerConfig.require(person!=null,"QR revocado o desconocido.");JSONObject p=person;
+            PeerConfig.require(p.optBoolean("activo"),"Persona inactiva.");
+            PeerConfig.require(p.optString("vence").isEmpty()||p.getString("vence").compareTo(today)>=0,"Autorización vencida.");
+            PeerConfig.require(Arrays.asList(p.optString("comidas").split(",")).contains(meal),"Comida no autorizada.");
+            PeerConfig.require(!p.optString("tipo").equals("VISITA")||p.getString("planta").equals(plant),"Visita autorizada en otra planta.");
+            String key=p.getString("id")+"|"+today+"|"+meal;
+            JSONObject rate=null;JSONArray rates=config.seed.getJSONArray("rates");
+            for(int i=0;i<rates.length();i++){JSONObject x=rates.getJSONObject(i);if(x.getString("desde").compareTo(today)<=0&&(rate==null||x.getString("desde").compareTo(rate.getString("desde"))>0))rate=x;}
+            PeerConfig.require(rate!=null&&Double.isFinite(rate.optDouble(meal))&&rate.optDouble(meal)>=0,"Falta una tarifa válida.");
+            String time=time(when);
+            JSONObject record=new JSONObject().put("clave",key).put("solicitud",r.getString("requestId")).put("persona",p.getString("id")).put("nombre",p.getString("nombre")).put("fecha",today).put("comida",meal).put("planta",plant).put("operador",op.getString("name")).put("hora",time).put("precio",rate.getDouble(meal)).put("centroCosto",p.optString("centroCosto")).put("qrHash",hash);
+            return record;
     }
 }

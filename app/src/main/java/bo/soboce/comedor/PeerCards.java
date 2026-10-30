@@ -8,7 +8,7 @@ import java.util.*;
 /** Signed credentials can be issued locally; only the replicated ledger authorizes a meal. */
 final class PeerCards {
     private static final List<String> MEALS=Arrays.asList("desayuno","almuerzo","cena");
-    static boolean local(String action){return Arrays.asList("session","people","today","report","issue","visitor").contains(action);}
+    static boolean local(String action){return Arrays.asList("session","people","today","report","conflicts","issue","visitor").contains(action);}
     static boolean format(String qr){return qr!=null&&qr.length()<=2048&&qr.matches("SB2:[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+");}
 
     static JSONObject request(PeerDatabase db,PeerConfig config,JSONObject request,long now) throws Exception {
@@ -42,7 +42,7 @@ final class PeerCards {
         }
         String data=body.toString();String qr="SB2:"+Base64.getUrlEncoder().withoutPadding().encodeToString(data.getBytes(StandardCharsets.UTF_8))+"."+Base64.getUrlEncoder().withoutPadding().encodeToString(Base64.getDecoder().decode(config.sign("card|"+config.cluster+"|"+data)));
         PeerConfig.require(format(qr),"Los datos de la tarjeta son demasiado largos.");
-        return MealLedger.ok().put("qr",qr).put("person",name).put("detail",detail).put("notice","Tarjeta creada en este teléfono. Las otras tarjetas de esta persona siguen vigentes y comparten el mismo límite de consumo.");
+        return MealLedger.ok().put("qr",qr).put("person",name).put("detail",detail).put("notice","Tarjeta creada en este teléfono. Las otras tarjetas de esta persona siguen vigentes y identifican a la misma persona. El control usa los consumos conocidos por cada teléfono.");
     }
     private static void visitorDates(String expires,long issued) {
         try{
