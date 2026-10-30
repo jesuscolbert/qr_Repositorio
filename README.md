@@ -68,7 +68,7 @@ La pantalla de escaneo indica planta y comida. Confirmar registra la entrega; se
 
 No editar, borrar o agregar filas directamente en Consumos durante la operación. Limitar la edición de las hojas a administración. Una modificación manual no participa del bloqueo de Apps Script. Las correcciones/anulaciones auditadas no están implementadas en esta primera versión.
 
-Un QR estático se puede prestar: el encargado debe contrastar el nombre. No se han incorporado fotografías ni reconocimiento facial. Guardar la tarjeta al emitirla. En Sheets se conserva solo su huella; en P2P las operaciones de emisión forman parte del historial privado replicado.
+Un QR estático se puede prestar: el encargado debe contrastar el nombre. No se han incorporado fotografías ni reconocimiento facial. Guardar la tarjeta al emitirla. En Sheets se conserva solo su huella; en P2P las emisiones anteriores forman parte del historial privado replicado; las tarjetas nuevas se emiten localmente y su uso queda registrado al confirmar una comida.
 
 ## Compilar
 
