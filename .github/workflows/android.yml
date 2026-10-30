@@ -3,30 +3,74 @@ on:
   workflow_dispatch:
   push:
     branches: [main, soboce-comedor]
-    paths: ['app/**', 'backend/**', 'tests/**', '*.gradle', 'gradle.properties', '.github/workflows/android.yml']
+    paths: ['app/**', 'backend/**', 'tests/**', 'scripts/**', '*.gradle', 'gradle.properties', '.github/workflows/android.yml']
   pull_request:
-    paths: ['app/**', 'backend/**', 'tests/**', '*.gradle', 'gradle.properties', '.github/workflows/android.yml']
+    paths: ['app/**', 'backend/**', 'tests/**', 'scripts/**', '*.gradle', 'gradle.properties', '.github/workflows/android.yml']
 permissions:
   contents: read
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: cloudflare/cloudflared
+          ref: 2026.10.6
+          path: .tools/cloudflared-source
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: .tools/cloudflared-source/go.mod
+          cache-dependency-path: .tools/cloudflared-source/go.sum
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@v3
         with:
-          packages: 'platform-tools platforms;android-35 build-tools;34.0.0'
+          packages: 'platform-tools platforms;android-35 build-tools;34.0.0 ndk;27.2.12479018'
           log-accepted-android-sdk-licenses: false
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+      - name: Restaurar firma estable sin incluirla en el repositorio
+        if: github.event_name != 'pull_request'
+        env:
+          KEYSTORE_B64: ${{ secrets.SOBOCE_SIGNING_KEYSTORE_B64 }}
+          PROPERTIES_B64: ${{ secrets.SOBOCE_SIGNING_PROPERTIES_B64 }}
+        run: |
+          python3 - <<'PY'
+          import base64, os, pathlib
+          target = pathlib.Path('private')
+          target.mkdir(exist_ok=True)
+          for variable, name in [('KEYSTORE_B64', 'release.jks'), ('PROPERTIES_B64', 'signing.properties')]:
+              value = os.environ.get(variable, '')
+              if not value:
+                  raise SystemExit('Falta configurar la firma estable en GitHub Secrets.')
+              (target / name).write_bytes(base64.b64decode(value, validate=True))
+          PY
       - run: node --test tests/backend.test.cjs
+      - name: Probar decisiones entre cuatro teléfonos
+        run: |
+          mkdir -p .tools/quorum-tests
+          javac -d .tools/quorum-tests app/src/main/java/bo/soboce/comedor/QuorumLog.java tests/QuorumLogTest.java
+          java -cp .tools/quorum-tests bo.soboce.comedor.QuorumLogTest
+      - name: Compilar conector de túnel para Android
+        run: bash scripts/build_cloudflared.sh
       - run: gradle :app:assemblePilot :app:lintPilot --console=plain
+      - name: Habilitar emulador
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: gradle :app:connectedDebugAndroidTest --console=plain
       - uses: actions/upload-artifact@v4
         with:
           name: SOBOCE-Comedor-prueba

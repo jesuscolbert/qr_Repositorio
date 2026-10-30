@@ -8,3 +8,8 @@ private/
 *.keystore
 .clasp.json
 outputs/
+config/
+config.zip
+*.pem
+app/src/main/jniLibs/
+app/src/main/assets/cloudflared-LICENSE.txt

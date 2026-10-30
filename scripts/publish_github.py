@@ -39,8 +39,8 @@ def main():
         if '404' not in str(exc): raise
         head=api(f'/repos/{REPO}/git/refs','POST',{'ref':'refs/heads/'+BRANCH,'sha':base})['object']['sha']
     tree=api(f'/repos/{REPO}/git/commits/{head}')['tree']['sha']
-    paths=[ROOT/p for p in ['.gitignore','settings.gradle','build.gradle','gradle.properties','README.md','.github/workflows/android.yml','scripts/import_roster.py','scripts/package_setup.py','scripts/publish_github.py']]
-    paths += [p for folder in ['app','backend','tests'] for p in (ROOT/folder).rglob('*') if p.is_file() and 'build' not in p.relative_to(ROOT).parts]
+    paths=[ROOT/p for p in ['.gitignore','settings.gradle','build.gradle','gradle.properties','README.md','.github/workflows/android.yml','scripts/import_roster.py','scripts/package_setup.py','scripts/publish_github.py','scripts/build_cloudflared.sh','scripts/provision_peers.py']]
+    paths += [p for folder in ['app','backend','tests'] for p in (ROOT/folder).rglob('*') if p.is_file() and not {'build','jniLibs','__pycache__'}.intersection(p.relative_to(ROOT).parts) and p.name != 'cloudflared-LICENSE.txt']
     entries=[{'path':p.relative_to(ROOT).as_posix(),'mode':'100644','type':'blob','content':p.read_text(encoding='utf-8')} for p in paths]
     new_tree=api(f'/repos/{REPO}/git/trees','POST',{'base_tree':tree,'tree':entries})['sha']
     if new_tree==tree:

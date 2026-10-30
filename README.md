@@ -1,6 +1,27 @@
 # SOBOCE Comedor
 
-Aplicación Android nativa para encargados de comedor. Mínimo Android 8.0. La cámara lee QR físicos o digitales. Google Sheets almacena el padrón y las entregas; un único proyecto de Apps Script autoriza todos los escaneos.
+Aplicación Android nativa para encargados de comedor. Mínimo Android 8.0; el modo de teléfonos requiere ARM64. La cámara lee QR físicos o digitales. Ofrece dos modos independientes: Google Sheets con Apps Script, y una red de cuatro teléfonos con bases SQLite replicadas. No mezclar ambos registros durante un servicio: no existe sincronización automática entre Sheets y P2P.
+
+## Red de cuatro teléfonos (piloto)
+
+Cada teléfono ejecuta un receptor local y su propio conector Cloudflare. La PC solo prepara la instalación; no participa durante el servicio. Se necesitan cuatro túneles y cuatro nombres diferentes. Las réplicas de un mismo túnel distribuyen conexiones, no replican bases de datos: no reutilizar el túnel de caja, GPS, juego o delivery.
+
+El historial usa Paxos con membresía fija de cuatro equipos. Una decisión exige tres votos persistidos; luego cada teléfono aplica las operaciones en el mismo orden. Un teléfono desconectado descarga las decisiones que le faltan al volver. La clave de consumo sigue siendo persona + fecha de Bolivia + comida, global para todas las plantas. El cambio de QR y las autorizaciones de visitantes se ordenan en el mismo historial. Los reintentos recuperan el resultado sin autorizar otra ración.
+
+Con dos o menos equipos conectados no se autorizan entregas. Los informes muestran la copia local y pueden estar atrasados. Se requieren internet, fecha automática y el servicio de red activo en al menos tres teléfonos. La app muestra una notificación mientras mantiene la conexión. Android puede suspender la red por batería/Doze; eso reduce disponibilidad, no habilita entregas sin mayoría.
+
+Preparación inicial, desde esta carpeta de trabajo:
+
+1. `python scripts/provision_peers.py --plan` muestra los cuatro nombres propuestos.
+2. `python scripts/provision_peers.py --apply` verifica el ejecutable oficial de Cloudflare, usa `config/cert.pem` para crear los cuatro túneles exclusivos y genera `private/peer-network/telefono-1.json` a `telefono-4.json`. Conserva el estado para reanudar y no sobrescribe DNS existente. No cambia los archivos originales de `config/`.
+3. Instalar la APK compilada por GitHub e importar el archivo privado correspondiente en cada teléfono. Cada archivo incluye padrón y credencial de UN túnel. El certificado administrador nunca se incluye. No duplicar un archivo en dos equipos.
+4. Iniciar la red y comprobar tres o cuatro equipos disponibles. Emitir QR y probar simultáneamente el mismo almuerzo desde dos plantas; debe existir una sola autorización. Probar también corte de internet, respuesta perdida, reinicio y recuperación de historial antes de usar consumos reales.
+
+La instalación inicial tiene 169 identidades SAP, las tarifas del modelo y cuatro puestos: Jesús Colbert como administrador; los otros tres como encargados de sus plantas. Los otros 18 registros siguen excluidos. Un supervisor que regresa con su teléfono recupera el historial automáticamente. Agregar un quinto votante, cambiar la membresía, revocar un teléfono perdido y cambiar tarifas/padrón de una red ya iniciada requieren un procedimiento adicional; no editar archivos de instalación de una red en uso.
+
+No borrar los datos ni reinstalar para actualizar: las promesas, votos y decisiones deben conservarse. Un teléfono perdido o borrado debe permanecer fuera de servicio hasta restaurar o sustituir su identidad mediante un procedimiento controlado. No cambiar el mínimo de votos a dos. El protocolo presupone cuatro dispositivos administrados y confiables; no es un consenso resistente a participantes maliciosos. La clave de red autentica mensajes y confirmaciones y se guarda cifrada en Android Keystore. El historial local contiene datos personales y credenciales QR para su replicación: proteger físicamente los equipos.
+
+El conector se compila desde el código oficial de `cloudflare/cloudflared` 2026.10.6 en GitHub, con NDK y Go; aumenta el tamaño de la APK. La compatibilidad real de esta integración Android debe pasar las pruebas del emulador y de los teléfonos antes de producción. Cloudflare transporta las conexiones; las bases permanecen en los teléfonos. No se utiliza un servidor de aplicación en la PC.
 
 ## Funciones
 
@@ -39,13 +60,13 @@ La pantalla de escaneo indica planta y comida. Confirmar registra la entrega; se
 
 No editar, borrar o agregar filas directamente en Consumos durante la operación. Limitar la edición de las hojas a administración. Una modificación manual no participa del bloqueo de Apps Script. Las correcciones/anulaciones auditadas no están implementadas en esta primera versión.
 
-Un QR estático se puede prestar: el encargado debe contrastar el nombre. No se han incorporado fotografías ni reconocimiento facial. Guardar la tarjeta al emitirla: por seguridad el servidor conserva solo la huella del QR, no su contenido recuperable.
+Un QR estático se puede prestar: el encargado debe contrastar el nombre. No se han incorporado fotografías ni reconocimiento facial. Guardar la tarjeta al emitirla. En Sheets se conserva solo su huella; en P2P las operaciones de emisión forman parte del historial privado replicado.
 
 ## Compilar
 
 La compilación se realizará en GitHub Actions por la restricción del firewall local. El ejecutor prepara JDK 17, Gradle 8.9 y Android SDK 35. El tipo pilot aplica R8 y reducción de recursos. La clave de firma de producción preparada localmente está en private y debe respaldarse para futuras actualizaciones.
 
-GitHub Actions en `.github/workflows/android.yml` prueba el backend y genera una APK piloto optimizada, firmada con una clave de prueba del ejecutor. La identidad de firma del piloto puede cambiar entre compilaciones; para actualizaciones estables se necesita configurar la firma de producción. La rama del proyecto es `soboce-comedor` en `jesuscolbert/qr_Repositorio`. Subir solamente código: .gitignore excluye Excel, padrón, claves y herramientas. El flujo no aloja la base de datos.
+GitHub Actions en `.github/workflows/android.yml` prueba el backend, el protocolo, SQLite y el ejecutable nativo en un emulador, y genera una APK piloto optimizada. La firma estable se restaura desde secretos de Actions; no se publica en el repositorio. Las compilaciones antiguas con firma de prueba distinta no se actualizan directamente: conservar sus datos antes de cualquier cambio de instalación. La rama del proyecto es `soboce-comedor` en `jesuscolbert/qr_Repositorio`. Subir solamente código: .gitignore excluye Excel, padrón, claves y herramientas. El flujo no aloja la base de datos.
 
 ## Verificación
 
@@ -53,7 +74,7 @@ GitHub Actions en `.github/workflows/android.yml` prueba el backend y genera una
 
 ## Archivos privados
 
-No subir `private/` a GitHub. Incluye el padrón, registros por revisar y la firma de Android. La APK no necesita ninguno de esos archivos durante la instalación. No compartir el Excel original como parte de un repositorio público.
+No subir `private/`, `config/`, `config.zip` ni certificados a GitHub. Incluyen el padrón, credenciales, registros por revisar y firma de Android. La APK universal no incorpora datos reales: en modo P2P cada teléfono importa solo su propio archivo privado. No compartir el Excel original ni los archivos de instalación como parte de un repositorio público.
 
 ## Activación pendiente
 
