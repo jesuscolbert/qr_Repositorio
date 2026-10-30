@@ -1,0 +1,18 @@
+plugins { id 'com.android.application' }
+android {
+ namespace 'bo.soboce.comedor'
+ compileSdk 35
+ defaultConfig { applicationId 'bo.soboce.comedor'; minSdk 26; targetSdk 35; versionCode 1; versionName '1.0.0' }
+ def signingFile = rootProject.file('private/signing.properties')
+ if (signingFile.exists()) {
+  def props = new Properties(); signingFile.withInputStream { props.load(it) }
+  signingConfigs { localRelease { storeFile rootProject.file('private/release.jks'); storePassword props['storePassword']; keyAlias 'comedor'; keyPassword props['keyPassword'] } }
+ }
+ buildTypes {
+  release { minifyEnabled true; shrinkResources true; proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro' }
+  pilot { initWith release; signingConfig signingConfigs.debug; applicationIdSuffix '.piloto'; versionNameSuffix '-piloto'; matchingFallbacks = ['release'] }
+ }
+ if (signingFile.exists()) buildTypes.release.signingConfig = signingConfigs.localRelease
+ compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}
+dependencies { implementation 'com.journeyapps:zxing-android-embedded:4.3.0'; implementation 'com.google.zxing:core:3.5.3' }

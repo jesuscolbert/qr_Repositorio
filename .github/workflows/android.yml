@@ -1,0 +1,31 @@
+name: Compilar APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, soboce-comedor]
+    paths: ['app/**', 'backend/**', 'tests/**', '*.gradle', 'gradle.properties', '.github/workflows/android.yml']
+  pull_request:
+    paths: ['app/**', 'backend/**', 'tests/**', '*.gradle', 'gradle.properties', '.github/workflows/android.yml']
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - run: node --test tests/backend.test.cjs
+      - run: gradle :app:assemblePilot :app:lintPilot --console=plain
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SOBOCE-Comedor-prueba
+          path: app/build/outputs/apk/pilot/*.apk
+          if-no-files-found: error

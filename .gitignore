@@ -1,0 +1,10 @@
+.tools/
+.gradle/
+**/build/
+local.properties
+private/
+*.xlsx
+*.jks
+*.keystore
+.clasp.json
+outputs/
