@@ -85,8 +85,8 @@ GitHub Actions en `.github/workflows/android.yml` prueba el backend, el protocol
 
 ## Archivos privados
 
-No subir `private/`, `config/`, `config.zip` ni certificados a GitHub. Incluyen el padrón, credenciales, registros por revisar y firma de Android. La APK universal no incorpora datos reales: en modo P2P cada teléfono importa solo su propio archivo privado. No compartir el Excel original ni los archivos de instalación como parte de un repositorio público.
+No subir `private/`, `config/`, `config.zip` ni certificados a GitHub. Incluyen el padrón, credenciales, registros por revisar y firma de Android. La APK genérica de GitHub no incorpora datos reales. La APK privada para todos sí incluye el padrón y el acceso de la red, y configura cada teléfono automáticamente. No compartir el Excel original ni los archivos de instalación como parte de un repositorio público.
 
 ## Activación pendiente
 
-Google Sheets y Apps Script todavía deben desplegarse si se elige ese modo. En P2P, conservar/importar las configuraciones privadas y probar registro sin red, duplicados locales, convergencia y revisión de conflictos en los equipos reales. Las pruebas de GitHub verifican el protocolo, persistencia SQLite y un túnel real desde el emulador con datos sintéticos. No sustituyen la prueba de servicio en los cuatro teléfonos, especialmente con pantalla apagada y restricciones de batería.
+Google Sheets y Apps Script todavía deben desplegarse si se elige ese modo. En la red compartida, instalar la misma APK privada en todos, conservar sus datos y probar registro sin red, duplicados locales, convergencia y revisión de conflictos en los equipos reales. Las pruebas de GitHub verifican el protocolo, persistencia SQLite y un túnel real desde el emulador con datos sintéticos. No sustituyen la prueba de servicio en los cuatro teléfonos, especialmente con pantalla apagada y restricciones de batería.
