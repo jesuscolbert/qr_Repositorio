@@ -36,10 +36,12 @@ final class PeerEngine implements QuorumLog.Network, AutoCloseable {
             while(offset<length){int n=in.read(bytes,offset,length-offset);if(n<0)throw new EOFException();offset+=n;}
             JSONObject envelope=new JSONObject(new String(bytes,StandardCharsets.UTF_8));String payload=envelope.getString("payload"),nonce=envelope.getString("nonce");int source=envelope.getInt("source");long time=envelope.getLong("time");
             PeerConfig.require(source>=0&&source<4&&nonce.matches("[a-f0-9]{64}")&&Math.abs(System.currentTimeMillis()-time)<=120000,"Identidad o reloj inválido.");
-            PeerConfig.require(PeerConfig.equal(envelope.getString("mac"),config.mac("request|"+config.cluster+"|"+source+"|"+time+"|"+nonce+"|"+payload)),"Acceso denegado.");
+            PeerConfig.require(config.verify(source,"request|"+config.cluster+"|"+source+"|"+time+"|"+nonce+"|"+payload,envelope.getString("signature")),"Acceso denegado.");
             synchronized(nonces){PeerConfig.require(!nonces.containsKey(nonce),"Solicitud repetida.");nonces.put(nonce,time);if(nonces.size()>2048)nonces.remove(nonces.keySet().iterator().next());}
-            JSONObject reply;try{reply=dispatch(new JSONObject(payload));}catch(Exception e){reply=new JSONObject().put("error","Operación no confirmada.");}
-            String result=reply.toString();byte[] body=new JSONObject().put("payload",result).put("mac",config.mac("reply|"+nonce+"|"+result)).toString().getBytes(StandardCharsets.UTF_8);
+            JSONObject request=new JSONObject(payload);String method=request.getString("method");
+            if(method.equals("prepare")||method.equals("accept"))PeerConfig.require(request.getLong("ballot")%4==source,"Proponente inválido.");
+            JSONObject reply;try{reply=dispatch(request);}catch(Exception e){reply=new JSONObject().put("error","Operación no confirmada.");}
+            String result=reply.toString();byte[] body=new JSONObject().put("payload",result).put("signature",config.sign("reply|"+nonce+"|"+result)).toString().getBytes(StandardCharsets.UTF_8);
             OutputStream out=s.getOutputStream();out.write(("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nCache-Control: no-store\r\nConnection: close\r\nContent-Length: "+body.length+"\r\n\r\n").getBytes(StandardCharsets.US_ASCII));out.write(body);out.flush();
         }catch(Exception ignored){/* Do not disclose authentication details or personal data in logs. */}
     }
@@ -59,19 +61,19 @@ final class PeerEngine implements QuorumLog.Network, AutoCloseable {
     JSONObject rpc(int peer,JSONObject request) throws Exception {
         if(closed)throw new IOException("Red detenida.");if(peer==config.node)return dispatch(request);
         String nonce=PeerConfig.random(),payload=request.toString();long now=System.currentTimeMillis();
-        JSONObject envelope=new JSONObject().put("source",config.node).put("time",now).put("nonce",nonce).put("payload",payload).put("mac",config.mac("request|"+config.cluster+"|"+config.node+"|"+now+"|"+nonce+"|"+payload));
+        JSONObject envelope=new JSONObject().put("source",config.node).put("time",now).put("nonce",nonce).put("payload",payload).put("signature",config.sign("request|"+config.cluster+"|"+config.node+"|"+now+"|"+nonce+"|"+payload));
         HttpURLConnection c=(HttpURLConnection)new URL(config.nodes.getJSONObject(peer).getString("url")+"/rpc").openConnection();
         c.setConnectTimeout(2500);c.setReadTimeout(4000);c.setRequestMethod("POST");c.setInstanceFollowRedirects(false);c.setDoOutput(true);c.setRequestProperty("Content-Type","application/json");byte[] body=envelope.toString().getBytes(StandardCharsets.UTF_8);c.setFixedLengthStreamingMode(body.length);
         try{
             try(OutputStream out=c.getOutputStream()){out.write(body);}if(c.getResponseCode()!=200)throw new IOException("Teléfono no disponible.");
             ByteArrayOutputStream bytes=new ByteArrayOutputStream();try(InputStream in=c.getInputStream()){byte[] buffer=new byte[8192];int n;while((n=in.read(buffer))!=-1){if(bytes.size()+n>1048576)throw new IOException("Respuesta demasiado grande.");bytes.write(buffer,0,n);}}
-            JSONObject reply=new JSONObject(bytes.toString("UTF-8"));String data=reply.getString("payload");PeerConfig.require(PeerConfig.equal(reply.getString("mac"),config.mac("reply|"+nonce+"|"+data)),"Respuesta no autenticada.");JSONObject result=new JSONObject(data);if(result.has("error"))throw new IOException("Teléfono sin confirmación.");return result;
+            JSONObject reply=new JSONObject(bytes.toString("UTF-8"));String data=reply.getString("payload");PeerConfig.require(config.verify(peer,"reply|"+nonce+"|"+data,reply.getString("signature")),"Respuesta no autenticada.");JSONObject result=new JSONObject(data);if(result.has("error"))throw new IOException("Teléfono sin confirmación.");return result;
         }finally{c.disconnect();}
     }
     @Override public QuorumLog.Promise prepare(int peer,long slot,long ballot) throws Exception {JSONObject p=rpc(peer,new JSONObject().put("method","prepare").put("slot",slot).put("ballot",ballot));return new QuorumLog.Promise(p.getBoolean("granted"),p.getLong("promised"),p.getLong("accepted"),p.isNull("value")?null:p.getString("value"));}
     @Override public QuorumLog.Vote accept(int peer,long slot,long ballot,String value) throws Exception {
         JSONObject r=rpc(peer,new JSONObject().put("method","accept").put("slot",slot).put("ballot",ballot).put("value",value));
-        if(!r.getBoolean("accepted"))return null;PeerConfig.require(r.getInt("node")==peer&&PeerConfig.equal(r.getString("signature"),config.vote(peer,slot,ballot,value)),"Voto inválido.");return new QuorumLog.Vote(peer,r.getString("signature"));
+        if(!r.getBoolean("accepted"))return null;PeerConfig.require(r.getInt("node")==peer&&config.validVote(peer,slot,ballot,value,r.getString("signature")),"Voto inválido.");return new QuorumLog.Vote(peer,r.getString("signature"));
     }
     @Override public void learn(int peer,QuorumLog.Decision d) throws Exception {rpc(peer,new JSONObject().put("method","learn").put("decision",PeerDatabase.encode(d)));}
     synchronized void sync(){
@@ -105,7 +107,7 @@ final class PeerEngine implements QuorumLog.Network, AutoCloseable {
         for(int peer=0;peer<4;peer++)try{long time=rpc(peer,new JSONObject().put("method","status")).getLong("time");if(Math.abs(now-time)<=60000&&MealLedger.day(time).equals(today))clocks++;}catch(Exception ignored){}
         if(clocks<3)throw new IOException("Se requieren 3 teléfonos conectados y con fecha automática correcta.");
         if(action.equals("issue")||action.equals("visitor"))r.put("newQr","SB1:"+PeerConfig.random());
-        String command=new JSONObject().put("request",r).put("actor",config.node).put("time",now).put("attempt",UUID.randomUUID().toString()).toString();consensus.append(command);
+        String command=config.seal(new JSONObject().put("request",r).put("actor",config.node).put("time",now).put("attempt",UUID.randomUUID().toString()));consensus.append(command);
         JSONObject result=db.get("results",r.getString("requestId"));if(result==null)throw new IOException("Sin confirmación.");
         return replyForAttempt(result,command);
     }

@@ -49,7 +49,7 @@ final class PeerDatabase extends SQLiteOpenHelper implements QuorumLog.Storage {
     }
     synchronized QuorumLog.Vote accept(long slot,long ballot,String value) throws Exception {
         checkSlot(slot,ballot);PeerConfig.require(value.length()<24000,"Operación demasiado grande.");
-        JSONObject command=new JSONObject(value);
+        JSONObject command=config.command(value);
         PeerConfig.require(command.getInt("actor")>=0&&command.getInt("actor")<4,"Origen inválido.");
         SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
         try{
@@ -72,7 +72,7 @@ final class PeerDatabase extends SQLiteOpenHelper implements QuorumLog.Storage {
     }
     @Override public synchronized void learn(QuorumLog.Decision d) throws Exception {
         checkSlot(d.slot(),d.ballot());Set<Integer> voters=new HashSet<>();
-        for(var v:d.votes())PeerConfig.require(v.node()>=0&&v.node()<4&&voters.add(v.node())&&PeerConfig.equal(v.signature(),config.vote(v.node(),d.slot(),d.ballot(),d.value())),"Confirmación inválida.");
+        for(var v:d.votes())PeerConfig.require(v.node()>=0&&v.node()<4&&voters.add(v.node())&&config.validVote(v.node(),d.slot(),d.ballot(),d.value(),v.signature()),"Confirmación inválida.");
         PeerConfig.require(voters.size()>=3,"Falta mayoría.");
         SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
         try {
@@ -86,7 +86,7 @@ final class PeerDatabase extends SQLiteOpenHelper implements QuorumLog.Storage {
             while(true){
                 String value;
                 try(Cursor c=db.rawQuery("SELECT value FROM decisions WHERE slot=?",new String[]{Long.toString(next)})){if(!c.moveToFirst())break;value=c.getString(0);}
-                JSONObject command=new JSONObject(value), req=command.getJSONObject("request");String id=req.getString("requestId");
+                JSONObject command=config.command(value), req=command.getJSONObject("request");String id=req.getString("requestId");
                 if(get("results",id)==null)save("results",id,new MealLedger(this,config).execute(command).put("commandHash",PeerConfig.hash(value)));
                 putMeta("applied",Long.toString(next++));
             }

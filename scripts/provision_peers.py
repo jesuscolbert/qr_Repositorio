@@ -5,7 +5,9 @@ Use --plan to inspect names, then --apply to create the dedicated Cloudflare tun
 Existing services and the original config/ files are not modified.
 """
 from pathlib import Path
-import argparse, hashlib, json, secrets, subprocess, sys, urllib.request
+import argparse, base64, hashlib, json, secrets, subprocess, sys, urllib.request
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives import serialization
 
 ROOT = Path(__file__).resolve().parents[1]
 PRIVATE = ROOT / 'private' / 'peer-network'
@@ -18,6 +20,12 @@ def encode(data):
 
 def sha(text):
     return hashlib.sha256(text.encode('utf-8')).hexdigest()
+
+def identity():
+    key = ec.generate_private_key(ec.SECP256R1())
+    private = key.private_bytes(serialization.Encoding.DER, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
+    public = key.public_key().public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
+    return base64.b64encode(private).decode('ascii'), base64.b64encode(public).decode('ascii')
 
 def run(exe, *args):
     result = subprocess.run([str(exe), *map(str, args)], capture_output=True, text=True, timeout=90)
@@ -61,10 +69,14 @@ def main():
     state_path = PRIVATE / 'installation.json'
     if state_path.exists():
         state = json.loads(state_path.read_text(encoding='utf-8'))
-        if state['nodes'] != nodes: raise RuntimeError('Conserva la membresía de la instalación existente.')
+        if [{k:n[k] for k in nodes[i]} for i,n in enumerate(state['nodes'])] != nodes: raise RuntimeError('Conserva la membresía de la instalación existente.')
+        if 'identities' not in state: raise RuntimeError('Esta preparación antigua requiere migrar las identidades antes de instalar; no reemplaces una red en uso.')
     else:
         seed = encode({'people': people, 'plants': PLANTS, 'rates': [{'desde':'2026-09-01','desayuno':12,'almuerzo':23,'cena':19}]})
-        state = {'nodes': nodes, 'seed': seed, 'secret': secrets.token_hex(32),
+        identities = []
+        for node in nodes:
+            private, public = identity(); identities.append(private); node['publicKey'] = public
+        state = {'nodes': nodes, 'seed': seed, 'identities': identities,
                  'manifest': encode({'installation': secrets.token_hex(16), 'nodes': nodes, 'seedHash': sha(seed)}),
                  'dnsReady': []}
         state_path.write_text(encode(state), encoding='utf-8')
@@ -79,8 +91,8 @@ def main():
             run(exe, 'tunnel', '--origincert', cert, 'route', 'dns', credentials['TunnelID'], f'comedor-{i+1}.colbertconsorcio.shop')
             state['dnsReady'].append(i)
             state_path.write_text(encode(state), encoding='utf-8')
-        bundle = {'format':'SOBOCE-P2P-1', 'manifest':state['manifest'], 'seed':state['seed'],
-                  'secret':state['secret'], 'node':i, 'tunnel':credentials}
+        bundle = {'format':'SOBOCE-P2P-2', 'manifest':state['manifest'], 'seed':state['seed'],
+                  'identityPrivate':state['identities'][i], 'node':i, 'tunnel':credentials}
         (PRIVATE / f'telefono-{i+1}.json').write_text(encode(bundle), encoding='utf-8')
         print(f'Teléfono {i+1}: archivo privado preparado. No reutilizarlo en otro equipo.')
     print('Instalación preparada. Cada teléfono importa SU archivo. La PC ya no interviene en el servicio.')
