@@ -1,6 +1,6 @@
 """Publish only reviewed source files using the user's authenticated GitHub CLI."""
 from pathlib import Path
-import json, subprocess, os, urllib.request, urllib.error
+import json, subprocess, os, sys, urllib.request, urllib.error
 
 ROOT=Path(__file__).resolve().parents[1]
 GH=ROOT/'.tools/gh/bin/gh.exe'
@@ -45,7 +45,8 @@ def main():
     new_tree=api(f'/repos/{REPO}/git/trees','POST',{'base_tree':tree,'tree':entries})['sha']
     if new_tree==tree:
         print(json.dumps({'unchanged':True,'sha':head,'branch':BRANCH}));return
-    commit=api(f'/repos/{REPO}/git/commits','POST',{'message':'Build SOBOCE meal control Android app with centralized QR validation','tree':new_tree,'parents':[head]})
+    message=sys.argv[1] if len(sys.argv)>1 else 'Build SOBOCE meal control Android app with centralized QR validation'
+    commit=api(f'/repos/{REPO}/git/commits','POST',{'message':message,'tree':new_tree,'parents':[head]})
     api(f'/repos/{REPO}/git/refs/heads/{BRANCH}','PATCH',{'sha':commit['sha'],'force':False})
     print(json.dumps({'sha':commit['sha'],'branch':BRANCH,'url':f'https://github.com/{REPO}/tree/{BRANCH}','files':len(entries)}))
 
