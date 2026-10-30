@@ -10,6 +10,9 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import java.net.*;
+import java.util.regex.*;
 import static org.junit.Assert.*;
 
 @RunWith(AndroidJUnit4.class)
@@ -45,5 +48,26 @@ public class PeerDatabaseTest {
         File binary=new File(context.getApplicationInfo().nativeLibraryDir,"libcloudflared.so");assertTrue(binary.canExecute());
         Process p=new ProcessBuilder(binary.getAbsolutePath(),"--version").redirectErrorStream(true).start();
         try{assertTrue("Connector did not exit",p.waitFor(20,TimeUnit.SECONDS));ByteArrayOutputStream output=new ByteArrayOutputStream();try(InputStream in=p.getInputStream()){byte[] b=new byte[2048];int n;while((n=in.read(b))!=-1)output.write(b,0,n);}assertEquals(output.toString("UTF-8"),0,p.exitValue());assertTrue(output.toString("UTF-8").contains("2026.10.6"));}finally{p.destroy();}
+    }
+    @Test public void androidConnectorReachesOriginThroughCloudflare() throws Exception {
+        // Ephemeral tunnel with synthetic data only; no production credentials in CI.
+        File binary=new File(context.getApplicationInfo().nativeLibraryDir,"libcloudflared.so");
+        ServerSocket origin=new ServerSocket(0,8,InetAddress.getByName("127.0.0.1"));
+        Thread responder=new Thread(()->{while(!origin.isClosed())try(Socket s=origin.accept()){
+            s.setSoTimeout(3000);InputStream in=s.getInputStream();int tail=0,b,count=0;while((b=in.read())!=-1&&count++<8192){tail=(tail<<8)|b;if(tail==0x0d0a0d0a)break;}
+            byte[] body="SOBOCE-CONNECTOR-TEST".getBytes(StandardCharsets.UTF_8);OutputStream out=s.getOutputStream();out.write(("HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: "+body.length+"\r\n\r\n").getBytes(StandardCharsets.US_ASCII));out.write(body);out.flush();
+        }catch(IOException ignored){}});responder.setDaemon(true);responder.start();
+        ProcessBuilder pb=new ProcessBuilder(binary.getAbsolutePath(),"tunnel","--no-autoupdate","--protocol","http2","--url","http://127.0.0.1:"+origin.getLocalPort());pb.environment().put("HOME",context.getCacheDir().getAbsolutePath());pb.redirectErrorStream(true);Process process=pb.start();
+        AtomicReference<String> address=new AtomicReference<>();StringBuffer diagnostic=new StringBuffer();
+        Thread logs=new Thread(()->{try(BufferedReader reader=new BufferedReader(new InputStreamReader(process.getInputStream(),StandardCharsets.UTF_8))){String line;Pattern pattern=Pattern.compile("https://[a-z0-9-]+\\.trycloudflare\\.com");while((line=reader.readLine())!=null){Matcher m=pattern.matcher(line);if(m.find())address.set(m.group());synchronized(diagnostic){if(diagnostic.length()>5000)diagnostic.delete(0,diagnostic.length()-3000);diagnostic.append(line).append('\n');}}}catch(IOException ignored){}});logs.setDaemon(true);logs.start();
+        boolean reached=false;long deadline=System.currentTimeMillis()+120000;
+        try{
+            while(System.currentTimeMillis()<deadline&&process.isAlive()){
+                if(address.get()!=null){HttpURLConnection c=(HttpURLConnection)new URL(address.get()+"/probe").openConnection();c.setConnectTimeout(3000);c.setReadTimeout(3000);
+                    try{if(c.getResponseCode()==200){ByteArrayOutputStream bytes=new ByteArrayOutputStream();try(InputStream in=c.getInputStream()){int b;while((b=in.read())!=-1&&bytes.size()<100)bytes.write(b);}if(bytes.toString("UTF-8").equals("SOBOCE-CONNECTOR-TEST")){reached=true;break;}}}catch(IOException ignored){}finally{c.disconnect();}}
+                Thread.sleep(1500);
+            }
+            assertTrue("Android tunnel did not reach its origin: "+diagnostic,reached);
+        }finally{process.destroy();origin.close();}
     }
 }
