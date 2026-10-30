@@ -64,6 +64,19 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      - name: Preparar conexión privada para prueba real del túnel
+        if: github.event_name != 'pull_request'
+        env:
+          SHARED_TEST_B64: ${{ secrets.SOBOCE_SHARED_TEST_CONFIG_B64 }}
+        run: |
+          python3 - <<'PY'
+          import base64, os, pathlib
+          value = os.environ.get('SHARED_TEST_B64', '')
+          if value:
+              target = pathlib.Path('app/src/androidTest/assets/shared-live-test.json')
+              target.parent.mkdir(parents=True, exist_ok=True)
+              target.write_bytes(base64.b64decode(value, validate=True))
+          PY
       - uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35

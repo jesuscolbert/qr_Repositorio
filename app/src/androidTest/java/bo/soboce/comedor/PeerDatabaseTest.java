@@ -17,6 +17,55 @@ import static org.junit.Assert.*;
 
 @RunWith(AndroidJUnit4.class)
 public class PeerDatabaseTest {
+    Process namedConnector(PeerConfig config) throws Exception {
+        File dir=new File(context.getFilesDir(),"shared-live-test");assertTrue(dir.exists()||dir.mkdirs());File credentials=new File(dir,"credentials.json"),yaml=new File(dir,"config.yml");
+        try(FileOutputStream out=new FileOutputStream(credentials)){out.write(config.raw.getJSONObject("tunnel").toString().getBytes(StandardCharsets.UTF_8));}
+        String text="tunnel: "+config.raw.getJSONObject("tunnel").getString("TunnelID")+"\ncredentials-file: "+credentials.getAbsolutePath()+"\nprotocol: http2\ningress:\n  - hostname: "+new URL(config.raw.getString("url")).getHost()+"\n    service: http://127.0.0.1:8787\n  - service: http_status:404\n";
+        try(FileOutputStream out=new FileOutputStream(yaml)){out.write(text.getBytes(StandardCharsets.UTF_8));}
+        Process p=new ProcessBuilder(new File(context.getApplicationInfo().nativeLibraryDir,"libcloudflared.so").getAbsolutePath(),"tunnel","--config",yaml.getAbsolutePath(),"--no-autoupdate","run",config.raw.getJSONObject("tunnel").getString("TunnelID")).directory(dir).redirectErrorStream(true).start();
+        Thread drain=new Thread(()->{try(InputStream in=p.getInputStream()){byte[] bytes=new byte[4096];while(in.read(bytes)!=-1){/* Never print connector credentials or raw logs. */}}catch(IOException ignored){}});drain.setDaemon(true);drain.start();return p;
+    }
+    @Test public void realSharedTunnelTransfersMealsAndReplacesCrashedServer() throws Exception {
+        JSONObject connection;
+        try(InputStream in=InstrumentationRegistry.getInstrumentation().getContext().getAssets().open("shared-live-test.json")){connection=new JSONObject(new String(in.readAllBytes(),StandardCharsets.UTF_8));}
+        catch(FileNotFoundException absent){org.junit.Assume.assumeTrue("Live credentials available only to authorized branch builds",false);return;}
+        PeerEngine[] engines=new PeerEngine[3];Process tunnel=null;final java.util.concurrent.atomic.AtomicReference<PeerEngine> renew=new java.util.concurrent.atomic.AtomicReference<>();java.util.concurrent.ScheduledExecutorService timer=java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
+        try{
+            for(int i=0;i<3;i++){
+                context.deleteDatabase("live-shared-"+i+".db");JSONObject raw=new JSONObject(sharedConfig(i,PeerConfig.random()).raw.toString());for(String key:new String[]{"url","coordinator","networkKey","tunnel"})raw.put(key,connection.get(key));engines[i]=new PeerEngine(context,new PeerConfig(raw.toString()),"live-shared-"+i+".db");
+            }
+            PeerEngine a=engines[0],b=engines[1],c=engines[2];
+            timer.scheduleWithFixedDelay(()->{PeerEngine e=renew.get();if(e!=null)e.shared.coordinate();},0,3,TimeUnit.SECONDS);
+            long deadline=System.currentTimeMillis()+45000;while(!a.shared.leading()&&System.currentTimeMillis()<deadline){a.shared.coordinate();Thread.sleep(500);}assertTrue("First phone could not acquire lease",a.shared.leading());
+            renew.set(a);a.start();tunnel=namedConnector(a.config);
+            deadline=System.currentTimeMillis()+90000;boolean reached=false;
+            while(System.currentTimeMillis()<deadline){b.shared.coordinate();try{b.shared.exchange();reached=true;break;}catch(Exception waiting){Thread.sleep(1000);}}
+            assertTrue("Client could not reach Android through named tunnel",reached);
+            assertEquals("accepted",b.request(sharedRequest(1,"almuerzo")).getString("status"));assertEquals(1,a.offline.records().size());assertEquals(1,b.offline.records().size());
+            renew.set(null);a.close();tunnel.destroyForcibly();assertTrue(tunnel.waitFor(10,TimeUnit.SECONDS));tunnel=null;
+            long previous=a.shared.lease.epoch;deadline=System.currentTimeMillis()+45000;
+            while(!b.shared.leading()&&System.currentTimeMillis()<deadline){b.shared.coordinate();Thread.sleep(1000);}assertTrue("Second phone did not take over expired lease",b.shared.leading());assertTrue(b.shared.lease.epoch>previous);
+            renew.set(b);b.start();tunnel=namedConnector(b.config);
+            deadline=System.currentTimeMillis()+90000;reached=false;
+            while(System.currentTimeMillis()<deadline){c.shared.coordinate();try{c.shared.exchange();reached=true;break;}catch(Exception waiting){Thread.sleep(1000);}}
+            assertTrue("Same URL did not reach replacement Android server",reached);assertEquals(1,c.offline.records().size());
+            assertEquals("duplicate",c.request(sharedRequest(2,"almuerzo")).getString("status"));assertEquals("accepted",c.request(sharedRequest(2,"cena")).getString("status"));
+            PeerConfig old=a.config;a.db.close();engines[0]=new PeerEngine(context,old,"live-shared-0.db");engines[0].shared.coordinate();assertFalse(engines[0].shared.leading());engines[0].shared.exchange();
+            for(PeerEngine e:engines)assertEquals(2,e.offline.records().size());
+            SharedNetwork.http(b.config.raw.getString("coordinator")+"/lease",b.shared.lease.request("release"),"Bearer "+b.config.raw.getString("networkKey"));
+        }finally{
+            renew.set(null);timer.shutdownNow();if(tunnel!=null)tunnel.destroyForcibly();
+            for(int i=0;i<engines.length;i++){if(engines[i]!=null){engines[i].close();engines[i].db.close();}context.deleteDatabase("live-shared-"+i+".db");}
+            File dir=new File(context.getFilesDir(),"shared-live-test");File[] files=dir.listFiles();if(files!=null)for(File f:files)f.delete();dir.delete();
+        }
+    }
+    JSONObject localSharedHttp(JSONObject envelope) throws Exception {
+        byte[] body=envelope.toString().getBytes(StandardCharsets.UTF_8);
+        try(Socket socket=new Socket("127.0.0.1",8787)){
+            socket.setSoTimeout(5000);OutputStream out=socket.getOutputStream();out.write(("POST /rpc HTTP/1.1\r\nHost: localhost\r\nContent-Length: "+body.length+"\r\n\r\n").getBytes(StandardCharsets.US_ASCII));out.write(body);out.flush();
+            String result=new String(socket.getInputStream().readAllBytes(),StandardCharsets.UTF_8);if(!result.startsWith("HTTP/1.1 200"))throw new IOException("Rejected");return new JSONObject(result.substring(result.indexOf("\r\n\r\n")+4));
+        }
+    }
     PeerConfig sharedConfig(int actor,String device) throws Exception {
         JSONObject raw=new JSONObject(config.raw.toString());raw.remove("identityPrivate");
         return new PeerConfig(raw.put("format","SOBOCE-SHARED-1").put("node",-1).put("device",device).put("networkKey","a".repeat(64)).put("url","https://comedor.example.com").put("coordinator","https://coord.example.com").put("operator",config.nodes.getJSONObject(actor)).toString());
@@ -95,10 +144,10 @@ public class PeerDatabaseTest {
         try{
             elect(new PeerEngine[]{e},0,1);e.start();String nonce=PeerConfig.random(),payload="{\"method\":\"status\"}";long time=System.currentTimeMillis();
             JSONObject envelope=new JSONObject().put("epoch",1).put("time",time).put("nonce",nonce).put("payload",payload).put("signature",c.mac("rpc|1|"+time+"|"+nonce+"|"+payload));
-            JSONObject result=SharedNetwork.http("http://127.0.0.1:8787/rpc",envelope,null);assertTrue(PeerConfig.equal(c.mac("reply|1|"+nonce+"|"+result.getString("payload")),result.getString("signature")));
-            try{SharedNetwork.http("http://127.0.0.1:8787/rpc",envelope,null);fail("Replay accepted");}catch(IOException expected){}
+            JSONObject result=localSharedHttp(envelope);assertTrue(PeerConfig.equal(c.mac("reply|1|"+nonce+"|"+result.getString("payload")),result.getString("signature")));
+            try{localSharedHttp(envelope);fail("Replay accepted");}catch(IOException expected){}
             long now=android.os.SystemClock.elapsedRealtime();e.shared.lease.update(new JSONObject().put("owner","c".repeat(64)).put("boot",PeerConfig.random()).put("epoch",2).put("remaining",30000),now,now);
-            assertFalse(e.shared.leading());try{SharedNetwork.http("http://127.0.0.1:8787/rpc",envelope,null);fail("Stale server responded");}catch(IOException expected){}
+            assertFalse(e.shared.leading());try{localSharedHttp(envelope);fail("Stale server responded");}catch(IOException expected){}
         }finally{e.close();e.db.close();context.deleteDatabase("shared-http.db");}
     }
     @Test public void uncertainRemoteWriteNeverFallsBackToSecondLocalGrant() throws Exception {

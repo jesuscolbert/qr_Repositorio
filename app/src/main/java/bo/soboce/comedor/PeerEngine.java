@@ -27,7 +27,7 @@ class PeerEngine implements QuorumLog.Network, AutoCloseable {
     PeerEngine(Context context,PeerConfig config) throws Exception {this(context,config,"comedor-peers.db");}
     PeerEngine(Context context,PeerConfig config,String databaseName) throws Exception {this.config=config;db=new PeerDatabase(context,config,databaseName);offline=new OfflineLedger(db,config);shared=config.shared?new SharedNetwork(this):null;synchronized(db){String saved=db.meta("instance","");if(saved.isEmpty()){saved=UUID.randomUUID().toString();db.putMeta("instance",saved);}instance=saved;}}
     void start() throws IOException {
-        server=new ServerSocket();server.bind(new InetSocketAddress(InetAddress.getByName("127.0.0.1"),8787),16);
+        server=new ServerSocket();server.setReuseAddress(true);server.bind(new InetSocketAddress(InetAddress.getByName("127.0.0.1"),8787),16);
         Thread acceptor=new Thread(()->{
             while(!closed)try{Socket s=server.accept();try{clients.execute(()->serve(s));}catch(RejectedExecutionException e){s.close();}}catch(IOException e){if(!closed)state="No se pudo abrir el receptor local.";}
         },"comedor-peer-listener");acceptor.setDaemon(true);acceptor.start();

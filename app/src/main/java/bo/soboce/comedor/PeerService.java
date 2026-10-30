@@ -46,7 +46,7 @@ public final class PeerService extends Service {
             synchronized(PeerService.this){
                 PeerEngine e=engine;if(stopped||e==null||e.shared==null)return;
                 if(e.shared.leading()){try{if(tunnel==null||!tunnel.isAlive())startTunnel(e.config);}catch(Exception error){failure="No se pudo abrir el túnel; el registro local sigue disponible.";}}
-                else {Process p=tunnel;tunnel=null;if(p!=null)p.destroy();}
+                else {Process p=tunnel;tunnel=null;if(p!=null)p.destroyForcibly();}
             }
         },0,250,TimeUnit.MILLISECONDS);
     }
@@ -66,5 +66,5 @@ public final class PeerService extends Service {
     }
     @Override public int onStartCommand(Intent intent,int flags,int id){return START_NOT_STICKY;}
     @Override public IBinder onBind(Intent intent){return null;}
-    @Override public synchronized void onDestroy(){stopped=true;tasks.shutdownNow();leaseTasks.shutdownNow();Process p=tunnel;if(p!=null)p.destroy();PeerEngine e=engine;engine=null;if(e!=null)e.close();if(awake!=null&&awake.isHeld())awake.release();super.onDestroy();}
+    @Override public synchronized void onDestroy(){stopped=true;tasks.shutdownNow();leaseTasks.shutdownNow();Process p=tunnel;if(p!=null)p.destroyForcibly();PeerEngine e=engine;engine=null;if(e!=null)e.close();if(awake!=null&&awake.isHeld())awake.release();super.onDestroy();}
 }

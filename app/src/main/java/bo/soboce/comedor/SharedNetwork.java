@@ -12,14 +12,20 @@ class SharedNetwork {
     final PeerEngine engine; final PeerConfig config; final SharedLedger ledger; final LeaderLease lease;
     private final Map<String,Long> nonces=new LinkedHashMap<>();
     volatile String detail="Buscando servidor…"; volatile long lastExchange; volatile int clients;
+    private volatile long leadershipSince,originSeen,cooldownUntil;
+    private volatile boolean yieldRequested;
     private final Map<String,Long> seen=new HashMap<>();
     SharedNetwork(PeerEngine e){engine=e;config=e.config;ledger=new SharedLedger(e.db,config);lease=new LeaderLease(config.device);}
     boolean leading(){return lease.leading(SystemClock.elapsedRealtime());}
     void coordinate(){
         try{
             long sent=SystemClock.elapsedRealtime();
-            JSONObject reply=http(config.raw.getString("coordinator")+"/lease",lease.request(leading()?"renew":"acquire"),"Bearer "+config.raw.getString("networkKey"));
+            boolean wasLeading=leading();long previousEpoch=lease.epoch;
+            String action=yieldRequested&&wasLeading?"release":wasLeading?"renew":sent<cooldownUntil?"status":"acquire";
+            JSONObject reply=http(config.raw.getString("coordinator")+"/lease",lease.request(action),"Bearer "+config.raw.getString("networkKey"));
             lease.update(reply,sent,SystemClock.elapsedRealtime());
+            if(action.equals("release")){cooldownUntil=sent+60000;yieldRequested=false;}
+            if(leading()&&(!wasLeading||previousEpoch!=lease.epoch)){leadershipSince=sent;originSeen=sent;}
             if(leading())detail="Este teléfono es el servidor";
             else if(lease.known(SystemClock.elapsedRealtime()))detail="Conectando al servidor";
             else detail="Esperando relevo del servidor";
@@ -55,7 +61,7 @@ class SharedNetwork {
             // A client has durably stored these heads before advertising them.
             long copied=r.getJSONObject("after").optLong(config.device);
             long previous=Long.parseLong(engine.db.meta("sharedAck","0"));if(copied>previous)engine.db.putMeta("sharedAck",Long.toString(Math.min(copied,ledger.vector().optLong(config.device))));
-            lastExchange=System.currentTimeMillis();synchronized(seen){seen.put(source,lastExchange);seen.entrySet().removeIf(x->x.getValue()<lastExchange-45000);clients=seen.size();}
+            lastExchange=System.currentTimeMillis();originSeen=SystemClock.elapsedRealtime();synchronized(seen){seen.put(source,lastExchange);seen.entrySet().removeIf(x->x.getValue()<lastExchange-45000);clients=seen.size();}
             detail="Servidor activo · "+clients+" teléfonos sincronizando";updateState();return reply;
         }
     }
@@ -70,7 +76,11 @@ class SharedNetwork {
     void sync(){
         synchronized(this){if(engine.syncing||engine.closed)return;engine.syncing=true;}
         try{
-            if(leading()){updateState();return;}
+            if(leading()){
+                try{JSONObject self=rpc(new JSONObject().put("method","status"));PeerConfig.require(self.getString("device").equals(config.device),"Otro conector respondió.");originSeen=SystemClock.elapsedRealtime();}
+                catch(Exception unreachable){long now=SystemClock.elapsedRealtime();if(now-leadershipSince>60000&&now-originSeen>45000){yieldRequested=true;detail="Túnel sin respuesta; preparando relevo";}}
+                updateState();return;
+            }
             if(!lease.known(SystemClock.elapsedRealtime())){updateState();return;}
             exchange();
         }catch(Exception e){detail="Sin intercambio confirmado · se reintentará automáticamente";}
@@ -120,7 +130,7 @@ class SharedNetwork {
     static JSONObject uncertain() throws JSONException {return new JSONObject().put("ok",false).put("definitive",false).put("error","El servidor pudo guardar esta entrega, pero falta confirmación. No entregues otra ración. Mantén la operación pendiente y vuelve a comprobar cuando los teléfonos se reconecten.");}
     static JSONObject http(String url,JSONObject value,String authorization) throws Exception {
         HttpURLConnection c=(HttpURLConnection)new URL(url).openConnection();c.setConnectTimeout(3000);c.setReadTimeout(5000);c.setRequestMethod("POST");c.setInstanceFollowRedirects(false);c.setDoOutput(true);c.setRequestProperty("Content-Type","application/json");if(authorization!=null)c.setRequestProperty("Authorization",authorization);
-        byte[] body=value.toString().getBytes(StandardCharsets.UTF_8);c.setFixedLengthStreamingMode(body.length);
+        c.setRequestProperty("User-Agent","SOBOCE-Comedor/1.5");byte[] body=value.toString().getBytes(StandardCharsets.UTF_8);c.setFixedLengthStreamingMode(body.length);
         try{try(OutputStream out=c.getOutputStream()){out.write(body);}if(c.getResponseCode()!=200)throw new IOException("HTTP "+c.getResponseCode());
             ByteArrayOutputStream bytes=new ByteArrayOutputStream();try(InputStream in=c.getInputStream()){byte[] buffer=new byte[8192];int n;while((n=in.read(buffer))!=-1){if(bytes.size()+n>1048576)throw new IOException("Respuesta demasiado grande.");bytes.write(buffer,0,n);}}return new JSONObject(bytes.toString("UTF-8"));
         }finally{c.disconnect();}

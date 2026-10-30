@@ -13,3 +13,5 @@ config.zip
 *.pem
 app/src/main/jniLibs/
 app/src/main/assets/cloudflared-LICENSE.txt
+
+**/.wrangler/

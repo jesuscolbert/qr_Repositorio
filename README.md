@@ -1,51 +1,38 @@
 # SOBOCE Comedor
 
-Aplicación Android nativa para encargados de comedor. Mínimo Android 8.0; el modo de teléfonos requiere ARM64. La cámara lee QR físicos o digitales. Ofrece dos modos independientes: Google Sheets con Apps Script, y una red de cuatro teléfonos con bases SQLite replicadas. No mezclar ambos registros durante un servicio: no existe sincronización automática entre Sheets y P2P.
+Aplicación Android para encargados de comedor. Android 8 o posterior; teléfonos ARM64. Los usuarios presentan un QR físico o digital; no necesitan otra aplicación.
 
-## Instaladores listos y diagnóstico — 1.4.0
+## APK única y entregas compartidas — 1.5.0
 
-Se pueden preparar cuatro APK privadas, una por encargado, usando `scripts/package_installers.py <APK-compilada-en-GitHub>`. El empaquetador incorpora únicamente la configuración correspondiente a ese teléfono, conserva byte por byte el código compilado y los recursos originales, alinea el archivo y lo firma con la clave estable. No compila Android localmente. Los instaladores quedan en `private/installers-1.4.0`, no se suben a GitHub y contienen datos y credenciales privados. La APK pública sigue siendo genérica y no incluye padrón ni claves.
+La misma APK privada se instala en todos los teléfonos, encima de la versión anterior y sin borrar datos. Cada instalación genera un identificador aleatorio propio. Un teléfono nuevo pide solamente nombre del encargado y planta; una actualización conserva su perfil. Ya no se importan JSON ni se copian bases `.db`.
 
-Al instalar una APK preparada, la app aplica la identidad y crea la base SQLite automáticamente. No hay que importar un JSON o copiar una `.db`. Debe usarse un número diferente en cada equipo. Si una base vacía estaba configurada con otro número de la misma red, el instalador puede corregirlo; si contiene consumos, decisiones, votos o una entrega pendiente, conserva los datos y bloquea el cambio de identidad. Una operación interrumpida reanuda la preparación al volver a abrir la app.
+«Entregas de hoy» muestra las entregas de todas las plantas, con hora, comida y encargado, y se actualiza cada cinco segundos mientras está abierta. El total incluye todas las filas; se muestran las últimas 500. El CSV mensual reúne todas las plantas. La sincronización comparte también el historial anterior, no solo el día actual.
 
-«Estado de la red» muestra el número de equipo, su URL, conexiones de Cloudflare y estado de cada compañero. Los registros del conector se traducen a mensajes limitados: no se muestran líneas crudas que puedan contener credenciales. Una comprobación autenticada del propio túnel advierte si responde otra instalación con la misma identidad; esa detección requiere que la otra instalación también envíe su identificador (1.4 o posterior). `/health` y `/` muestran únicamente que el servicio responde, sin padrón, consumos ni credenciales.
+### Una URL y relevo automático
 
-Se mantienen los cuatro túneles independientes `comedor-1.colbertconsorcio.shop` a `comedor-4.colbertconsorcio.shop`, seleccionados automáticamente. Ningún teléfono es un servidor central obligatorio: los disponibles intercambian copias y retransmiten registros. Compartir la credencial de un túnel genera réplicas de entrada, no sincroniza sus bases ni garantiza a qué teléfono llega una petición. No se implementó una URL única con elección exclusiva de líder.
+Todos usan `https://comedor.colbertconsorcio.shop`. El primer teléfono que obtiene el permiso del coordinador abre el túnel. Los demás envían y reciben páginas de registros con ese servidor cada cinco segundos. Cuando desaparece, otro obtiene el permiso y usa el mismo túnel y URL. La elección puede tardar unos 30 segundos más la reconexión del túnel. Si el servidor conserva internet pero su túnel no responde, cede el puesto después del período de comprobación.
 
-## Registro con un solo teléfono — piloto 1.3.0
+El coordinador es un Worker con un Durable Object SQLite de Cloudflare: guarda solo identidad temporal del servidor, vencimiento y número de relevo, **ningún consumo ni padrón**. Es un servicio externo necesario para arbitrar la URL única; la PC no participa durante el servicio. Solo quien tiene un permiso vigente puede responder; un reloj monotónico y un margen de seguridad detienen el receptor anterior. Los clientes rechazan respuestas de otro relevo. No se confunde una réplica de Cloudflare Tunnel con una copia de la base de datos.
 
-Un encargado puede registrar desayuno, almuerzo y cena con un solo teléfono, aunque no haya internet, los demás estén apagados o el servicio de sincronización esté detenido. La entrega se confirma después de guardar el consumo y su resultado en una transacción SQLite local. Cada teléfono bloquea un segundo consumo conocido de la misma persona, fecha de Bolivia y comida. Los reintentos y el reinicio recuperan el resultado sin autorizar otra ración.
+Si no hay coordinación o conexión, cada teléfono sigue registrando localmente. Para compartir datos deben coincidir con internet al menos dos equipos que tengan la app o servicio activos. Android puede detener la sincronización por batería: abrir la app la reanuda. No se garantiza un servidor siempre encendido en segundo plano ni relevo instantáneo.
 
-**Límite del funcionamiento sin conexión:** dos teléfonos aislados pueden autorizar la misma comida antes de conocer el registro del otro. No existe bloqueo global inmediato en ese caso. Al sincronizar, ambos consumos se conservan y aparecen como `POSIBLE DUPLICADO` en «Revisar duplicados» y en el CSV mensual. Los totales incluyen todas las entregas registradas; no se elimina ninguna automáticamente ni se decide cuál fue realmente servida. La revisión es informativa: todavía no hay anulación o resolución auditada dentro de la app.
+### Consumos, reintentos y datos sin conexión
 
-### Sincronización posterior
+Con servidor accesible, las solicitudes de entrega se resuelven en una transacción del servidor y se replican. Si una respuesta se pierde después de enviar la solicitud, esta queda pendiente: no se autoriza automáticamente una segunda entrega local. Un relevo que aún no tenga esa operación necesitará recuperar la copia del servidor anterior para resolver la incertidumbre.
 
-Cada dispositivo firma sus registros y mantiene una secuencia propia. Los equipos intercambian páginas de registros faltantes mediante los túneles existentes; cada uno puede retransmitir los registros de los demás. El receptor verifica la firma, el origen, la planta y la coherencia del registro, rechaza cambios en una secuencia ya conocida y guarda cada página de forma atómica. Reenviar una página no vuelve a crear consumos. Se conservan las cuatro identidades y las configuraciones `SOBOCE-P2P-2` existentes; no se generan claves o túneles nuevos al actualizar.
+Sin servidor accesible, la operación se guarda en SQLite local. Dos equipos aislados pueden servir la misma comida; al reunirlos se conservan ambas entregas y se marcan `POSIBLE DUPLICADO`. No hay bloqueo global inmediato sin conexión. Un servidor nuevo tampoco puede conocer los datos que solo estaban en un teléfono apagado: se incorporan cuando este regresa. El contador indica pendientes de llegar al servidor; en el servidor indica entregas propias aún sin copia confirmada en otro equipo.
 
-Registrar requiere **un teléfono**. Sincronizar requiere que al menos dos coincidan con internet y la app/servicio activos; los otros reciben el historial cuando vuelvan a coincidir con un equipo que lo tenga. Sin una PC o servidor de datos siempre encendido, no se puede sincronizar entre teléfonos que nunca están disponibles al mismo tiempo. El contador de pendientes indica cuántas entregas locales todavía no han sido confirmadas en todos los otros equipos; puede ser mayor que cero aunque ya exista una copia en alguno.
+La actualización conserva las tablas, firmas, QR SB1/SB2 y consumos de las versiones anteriores. Los nuevos QR SB3 y recibos se autentican con una clave de esta red privada. El identificador de cada teléfono evita colisiones accidentales, pero el esquema confía en los encargados que reciben la APK: no constituye una identidad individual resistente a la extracción o manipulación de la APK. La clave de red y la credencial del único túnel están incluidas; **no** se incluye ninguna clave de administración de Cloudflare ni las claves privadas de los cuatro equipos anteriores. Distribuir solo a encargados autorizados. Todos deben actualizar a 1.5 para intercambiar registros nuevos; los cuatro túneles anteriores se conservan para no interrumpir instalaciones antiguas.
 
-El servicio intenta sincronizar periódicamente. «Sincronizar ahora» inicia otra comprobación sin bloquear el registro local. Si Android detiene el servicio por batería/Doze, abrir la app al recuperar internet reanuda los intentos. Mantener fecha y hora automáticas: la fecha de entrega se toma del teléfono en `America/La_Paz`, porque sin conexión no hay un reloj central. Un retroceso importante respecto de la última entrega local exige corregir la hora.
+### Preparación y compilación
 
-### Actualizar sin perder el historial
+1. `scripts/provision_shared.py` crea el túnel exclusivo y el paquete privado base, sin cambiar los otros servicios.
+2. Publicar `backend/coordination/wrangler.jsonc` en la cuenta correspondiente, con el secreto `NETWORK_KEY` igual al del paquete privado. Requiere permisos de Workers Scripts; el certificado de túneles no basta. No activar un plan de pago automáticamente.
+3. `scripts/provision_shared.py --coordinator https://URL-DEL-WORKER` completa la configuración.
+4. La compilación y las pruebas Android se hacen en GitHub Actions, rama `soboce-comedor`.
+5. `scripts/package_universal.py APK-DE-GITHUB` añade el paquete privado, comprueba que el código y los recursos permanecen iguales, alinea y firma con la clave estable. Produce **un solo archivo** `private/installer-1.5.0/SOBOCE-Comedor-1.5.0-Todos.apk` para todos. No compila Android localmente.
 
-Instalar la versión 1.3.0 sobre la anterior, sin desinstalar ni borrar datos. Actualizar los cuatro teléfonos antes de usarlos juntos: las versiones 1.1/1.2 no reciben los registros nuevos. Un teléfono actualizado ya puede registrar solo. Se conserva el historial anterior, los consumos, los resultados de reintentos y los votos históricos. Se pueden recuperar decisiones antiguas de otros teléfonos; ya no se emiten votos nuevos ni se exige una mayoría para entregar comidas. Los datos nuevos se guardan en un registro independiente de recibos firmados. Si llega después un consumo antiguo que coincide con uno local, también queda visible para revisión.
-
-### Emitir y compartir QR
-
-Cada encargado puede crear, guardar y compartir QR de trabajadores de su planta con su teléfono solamente. También puede generar QR temporales para visitantes, indicando documento, planta, comidas, centro de costo y vencimiento de hasta 30 días. Crear otra tarjeta no revoca las anteriores. Todas identifican al mismo trabajador por SAP o al mismo visitante por su documento normalizado; el bloqueo usa los consumos conocidos por cada teléfono. Los QR anteriores siguen reconociéndose cuando su registro de emisión ya está en la copia local. Los visitantes solo consumen en la planta y comidas autorizadas por su tarjeta.
-
-### Instalación
-
-Cada teléfono ejecuta un receptor local y su propio conector Cloudflare. La PC no participa durante el servicio. Los cuatro túneles y direcciones existentes son distintos; no reutilizar los túneles de caja, GPS, juego o delivery.
-
-1. La preparación inicial se realiza con `scripts/provision_peers.py --plan` y `--apply`. Usa `config/cert.pem` para crear los túneles exclusivos y genera los archivos privados `telefono-1.json` a `telefono-4.json`. No ejecutar para reemplazar una red en uso.
-2. Instalar la APK e importar el archivo privado correspondiente a ese teléfono. Cada archivo contiene el padrón, una identidad y la credencial de un túnel. No copiar una identidad a dos equipos.
-3. Emitir un QR y probar las tres comidas con los otros teléfonos apagados. Repetir la misma comida debe bloquearse localmente, incluso después de reiniciar la app.
-4. Reconectar dos equipos, comprobar la copia de consumos y luego incorporar los demás. Probar también un consumo repetido deliberadamente en dos equipos desconectados: deben conservarse ambos registros y marcarse para revisión.
-
-La instalación inicial contiene 169 identidades SAP y cuatro puestos: Jesús Colbert como administrador y tres encargados de sus plantas. Los otros 18 registros del archivo original siguen excluidos. Un equipo nuevo con una identidad ya preparada descarga el historial disponible al conectarse. Agregar un quinto miembro, sustituir un teléfono perdido o cambiar tarifas/padrón requiere un procedimiento adicional. No editar archivos de una red en uso ni borrar sus bases.
-
-Cada teléfono tiene una clave ECDSA privada diferente, cifrada con Android Keystore. La replicación presupone dispositivos administrados y confiables; una firma acredita quién registró una entrega, no demuestra que la ración fue físicamente servida. El historial privado incluye datos personales y las credenciales usadas para registrar. Cloudflare transporta conexiones; las bases permanecen en los teléfonos. El conector oficial `cloudflare/cloudflared` 2026.10.6 se compila para Android en GitHub.
+La APK genérica de GitHub no lleva datos ni credenciales. No publicar la APK privada o su paquete de configuración en el repositorio público. `scripts/package_installers.py` y `provision_peers.py` quedan únicamente para instalaciones antiguas 1.4.
 
 ## Funciones del modo Google Sheets
 
