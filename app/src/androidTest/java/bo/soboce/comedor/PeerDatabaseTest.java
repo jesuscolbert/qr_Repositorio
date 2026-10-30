@@ -340,4 +340,11 @@ public class PeerDatabaseTest {
         }finally{engine.close();engine.db.close();}
     }
 
+
+    @Test public void duplicateIdentityWarningRemainsAfterTheNextRequestHitsThisPhone() throws Exception {
+        PeerEngine engine=new PeerEngine(context,config){int calls;@Override JSONObject remoteRpc(int peer,JSONObject request) throws Exception {return new JSONObject().put("instance",calls++==0?"another-installation":instance);}};
+        try{engine.checkOwnIdentity();assertFalse(engine.identityWarning.isEmpty());engine.checkOwnIdentity();assertFalse(engine.identityWarning.isEmpty());}
+        finally{engine.close();engine.db.close();}
+    }
+
 }
