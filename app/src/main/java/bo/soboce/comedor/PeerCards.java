@@ -7,7 +7,7 @@ import java.util.*;
 
 /** Signed credentials can be issued locally; only the replicated ledger authorizes a meal. */
 final class PeerCards {
-    private static final List<String> MEALS=Arrays.asList("desayuno","almuerzo","cena");
+    private static final List<String> MEALS=Meals.ALL;
     static boolean local(String action){return Arrays.asList("session","people","today","report","conflicts","issue","visitor").contains(action);}
     static boolean format(String qr){return qr!=null&&qr.length()<=2048&&qr.matches("SB[23]:[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+");}
 

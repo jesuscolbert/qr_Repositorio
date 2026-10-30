@@ -80,10 +80,10 @@ final class SharedLedger {
         JSONObject req=b.getJSONObject("request"),r=b.getJSONObject("record"),op=b.getJSONObject("operator");validateOperator(op);
         String meal=req.getString("meal"),plant=req.getString("plant"),qr=req.getString("qr");long when=b.getLong("time");
         PeerConfig.require(req.getString("action").equals("scan")&&req.getString("requestId").matches("[a-f0-9-]{36}")&&req.getString("requestId").equals(r.getString("solicitud")),"Solicitud inválida.");
-        PeerConfig.require(Arrays.asList("desayuno","almuerzo","cena").contains(meal)&&(qr.matches("SB1:[a-f0-9]{64}")||PeerCards.format(qr))&&PeerConfig.hash(qr).equals(r.getString("qrHash")),"Comida o QR inválidos.");
+        PeerConfig.require(Meals.ALL.contains(meal)&&(qr.matches("SB1:[a-f0-9]{64}")||PeerCards.format(qr))&&PeerConfig.hash(qr).equals(r.getString("qrHash")),"Comida o QR inválidos.");
         boolean known=false;JSONArray plants=config.seed.getJSONArray("plants");for(int i=0;i<plants.length();i++)known|=plants.getString(i).equals(plant);
         PeerConfig.require(known&&(op.getString("role").equals("admin")||op.getString("plant").equals(plant)),"Planta no autorizada.");
-        PeerConfig.require(r.getString("fecha").equals(MealLedger.day(when))&&r.getString("hora").equals(MealLedger.time(when))&&r.getString("clave").equals(r.getString("persona")+"|"+MealLedger.day(when)+"|"+meal),"Fecha o persona incompatible.");
+        PeerConfig.require(r.getString("fecha").equals(MealLedger.day(when))&&r.getString("hora").equals(MealLedger.time(when))&&r.getString("clave").equals(r.getString("persona")+"|"+MealLedger.day(when)+"|"+Meals.allowance(meal)),"Fecha o persona incompatible.");
         PeerConfig.require(r.getString("planta").equals(plant)&&r.getString("comida").equals(meal)&&r.getString("operador").equals(op.getString("name"))&&Double.isFinite(r.getDouble("precio"))&&r.getDouble("precio")>=0,"Datos inválidos.");
         PeerConfig.require(!r.getString("persona").isEmpty()&&r.getString("persona").length()<=100&&!r.getString("nombre").isEmpty()&&r.getString("nombre").length()<=200&&r.getString("centroCosto").length()<=100,"Persona inválida.");
     }

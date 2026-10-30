@@ -10,7 +10,7 @@ final class MealLedger {
     private final PeerDatabase db;
     private final PeerConfig config;
     private static final ZoneId ZONE=ZoneId.of("America/La_Paz");
-    private static final List<String> MEALS=Arrays.asList("desayuno","almuerzo","cena");
+    private static final List<String> MEALS=Meals.ALL;
     MealLedger(PeerDatabase db,PeerConfig config){this.db=db;this.config=config;}
     static String day(long time){return Instant.ofEpochMilli(time).atZone(ZONE).toLocalDate().toString();}
     static String time(long when){return Instant.ofEpochMilli(when).atZone(ZONE).format(DateTimeFormatter.ofPattern("HH:mm:ss"));}
@@ -38,14 +38,9 @@ final class MealLedger {
             return ok().put("people",people);
         }
         if(action.equals("today")||action.equals("report")||action.equals("conflicts")){
-            List<JSONObject> items=new ArrayList<>();double total=0;int conflicts=0;String month=r.optString("month");
-            if(action.equals("report"))PeerConfig.require(month.matches("\\d{4}-(0[1-9]|1[0-2])"),"Mes inválido.");
-            for(JSONObject m:new OfflineLedger(db,config).records())if((all||m.getString("planta").equals(plant))&&(action.equals("conflicts")?!m.optString("revision").isEmpty():action.equals("today")?m.getString("fecha").equals(today):m.getString("fecha").startsWith(month+"-"))){items.add(m);total+=m.getDouble("precio");if(!m.optString("revision").isEmpty())conflicts++;}
-            if(!action.equals("report")){JSONArray recent=new JSONArray();for(int i=items.size()-1;i>=Math.max(0,items.size()-(config.shared?500:action.equals("conflicts")?100:30));i--)recent.put(items.get(i));return ok().put("count",items.size()).put("total",total).put("items",recent).put("synced",db.applied()).put("conflicts",conflicts).put("pending",(config.shared?new SharedLedger(db,config).pending():new OfflineLedger(db,config).pending()));}
-            String[] cols={"fecha","hora","persona","nombre","comida","planta","operador","precio","centroCosto","registro","origen","revision"};StringBuilder csv=new StringBuilder("\uFEFF"+String.join(",",cols));
-            for(JSONObject row:items){csv.append("\r\n");for(int i=0;i<cols.length;i++){if(i>0)csv.append(',');String v=row.optString(cols[i]);if(v.matches("^[=+@-].*"))v="'"+v;csv.append('"').append(v.replace("\"","\"\"")).append('"');}}
-            return ok().put("count",items.size()).put("csv",csv.toString());
+            return MealReports.build(new OfflineLedger(db,config).records(),r,today,all).put("synced",db.applied()).put("pending",config.shared?new SharedLedger(db,config).pending():new OfflineLedger(db,config).pending());
         }
+
         if(action.equals("scan")){
             JSONObject record=scanRecord(r,actor,when);String key=record.getString("clave");JSONObject previous=db.get("meals",key);
             if(previous!=null)return ok().put("status","duplicate").put("message","Ya consumió esta comida.").put("person",record.getString("nombre")).put("plant",previous.getString("planta")).put("time",previous.getString("hora"));
@@ -86,14 +81,14 @@ final class MealLedger {
             PeerConfig.require(person!=null,"QR revocado o desconocido.");JSONObject p=person;
             PeerConfig.require(p.optBoolean("activo"),"Persona inactiva.");
             PeerConfig.require(p.optString("vence").isEmpty()||p.getString("vence").compareTo(today)>=0,"Autorización vencida.");
-            PeerConfig.require(Arrays.asList(p.optString("comidas").split(",")).contains(meal),"Comida no autorizada.");
+            PeerConfig.require(Meals.permitted(p.optString("comidas"),meal),"Comida no autorizada.");
             PeerConfig.require(!p.optString("tipo").equals("VISITA")||p.getString("planta").equals(plant),"Visita autorizada en otra planta.");
-            String key=p.getString("id")+"|"+today+"|"+meal;
+            String key=p.getString("id")+"|"+today+"|"+Meals.allowance(meal);
             JSONObject rate=null;JSONArray rates=config.seed.getJSONArray("rates");
             for(int i=0;i<rates.length();i++){JSONObject x=rates.getJSONObject(i);if(x.getString("desde").compareTo(today)<=0&&(rate==null||x.getString("desde").compareTo(rate.getString("desde"))>0))rate=x;}
-            PeerConfig.require(rate!=null&&Double.isFinite(rate.optDouble(meal))&&rate.optDouble(meal)>=0,"Falta una tarifa válida.");
+            PeerConfig.require(rate!=null&&Double.isFinite(rate.optDouble(Meals.allowance(meal)))&&rate.optDouble(Meals.allowance(meal))>=0,"Falta una tarifa válida.");
             String time=time(when);
-            JSONObject record=new JSONObject().put("clave",key).put("solicitud",r.getString("requestId")).put("persona",p.getString("id")).put("nombre",p.getString("nombre")).put("fecha",today).put("comida",meal).put("planta",plant).put("operador",op.getString("name")).put("hora",time).put("precio",rate.getDouble(meal)).put("centroCosto",p.optString("centroCosto")).put("qrHash",hash);
+            JSONObject record=new JSONObject().put("clave",key).put("solicitud",r.getString("requestId")).put("persona",p.getString("id")).put("nombre",p.getString("nombre")).put("fecha",today).put("comida",meal).put("planta",plant).put("operador",op.getString("name")).put("hora",time).put("precio",rate.getDouble(Meals.allowance(meal))).put("centroCosto",p.optString("centroCosto")).put("qrHash",hash);
             return record;
     }
 }

@@ -17,6 +17,67 @@ import static org.junit.Assert.*;
 
 @RunWith(AndroidJUnit4.class)
 public class PeerDatabaseTest {
+    @Test public void dietReplacesLunchAcrossPhonesAndPreservesItsReportLabel() throws Exception {
+        PeerConfig a=sharedConfig(0,"b".repeat(64)),b=sharedConfig(1,"c".repeat(64));long now=System.currentTimeMillis();
+        context.deleteDatabase("diet-a.db");context.deleteDatabase("diet-b.db");
+        try(PeerDatabase ad=new PeerDatabase(context,a,"diet-a.db");PeerDatabase bd=new PeerDatabase(context,b,"diet-b.db")){
+            SharedLedger al=new SharedLedger(ad,a),bl=new SharedLedger(bd,b);
+            assertEquals("accepted",al.scan(sharedRequest(0,"dieta"),a.operator(-1),now).getString("status"));
+            bl.merge(al.events(new JSONObject(),20));assertEquals("duplicate",bl.scan(sharedRequest(1,"almuerzo"),b.operator(-1),now).getString("status"));
+            assertEquals("duplicate",bl.scan(sharedRequest(1,"dieta"),b.operator(-1),now).getString("status"));
+            JSONObject saved=new OfflineLedger(bd,b).records().get(0);assertEquals("dieta",saved.getString("comida"));assertTrue(saved.getString("clave").endsWith("|almuerzo"));assertEquals(23,saved.getDouble("precio"),0.001);
+            long tomorrow=now+86400000L;assertEquals("accepted",bl.scan(sharedRequest(1,"almuerzo"),b.operator(-1),tomorrow).getString("status"));al.merge(bl.events(al.vector(),20));assertEquals("duplicate",al.scan(sharedRequest(0,"dieta"),a.operator(-1),tomorrow).getString("status"));
+            assertEquals("accepted",al.scan(sharedRequest(0,"cena"),a.operator(-1),tomorrow).getString("status"));
+        }finally{context.deleteDatabase("diet-a.db");context.deleteDatabase("diet-b.db");}
+    }
+    @Test public void dietVisitorAuthorizationAndOfflineConflictAreSafe() throws Exception {
+        long now=System.currentTimeMillis();PeerConfig a=sharedConfig(0,"b".repeat(64)),b=sharedConfig(1,"c".repeat(64));context.deleteDatabase("diet-visitor.db");context.deleteDatabase("diet-other.db");
+        try(PeerDatabase ad=new PeerDatabase(context,a,"diet-visitor.db");PeerDatabase bd=new PeerDatabase(context,b,"diet-other.db")){
+            SharedLedger al=new SharedLedger(ad,a),bl=new SharedLedger(bd,b);String card=PeerCards.request(ad,a,visitorRequest("Planta 0",now).put("meals","dieta"),now).getString("qr");
+            assertFalse(al.scan(sharedRequest(0,"almuerzo").put("qr",card),a.operator(-1),now).getBoolean("ok"));assertEquals("accepted",al.scan(sharedRequest(0,"dieta").put("qr",card),a.operator(-1),now).getString("status"));
+            al.scan(sharedRequest(0,"dieta"),a.operator(-1),now);bl.scan(sharedRequest(1,"almuerzo"),b.operator(-1),now);al.merge(bl.events(al.vector(),20));
+            int marked=0;for(JSONObject row:new OfflineLedger(ad,a).records())if(row.optString("revision").equals("POSIBLE DUPLICADO"))marked++;assertEquals(2,marked);
+        }finally{context.deleteDatabase("diet-visitor.db");context.deleteDatabase("diet-other.db");}
+    }
+    @Test public void dailyReportsFilterExactDateValidateCalendarAndExportAllRows() throws Exception {
+        long now=System.currentTimeMillis();PeerConfig c=sharedConfig(0,"b".repeat(64));context.deleteDatabase("daily-report.db");
+        try(PeerDatabase local=new PeerDatabase(context,c,"daily-report.db")){
+            SharedLedger ledger=new SharedLedger(local,c);ledger.scan(sharedRequest(0,"desayuno"),c.operator(-1),now);ledger.scan(sharedRequest(0,"dieta"),c.operator(-1),now);ledger.scan(sharedRequest(0,"cena"),c.operator(-1),now+86400000L);
+            JSONObject req=new JSONObject().put("action","report").put("period","day").put("date",MealLedger.day(now)).put("plant","Planta 0").put("allPlants",true);
+            JSONObject r=new MealLedger(local,c).read(req);assertEquals(2,r.getInt("count"));assertEquals(35,r.getDouble("total"),0.001);assertEquals(1,r.getJSONObject("byMeal").getInt("dieta"));assertEquals(0,r.getJSONObject("byMeal").getInt("almuerzo"));assertEquals(3,r.getString("csv").split("\r\n").length);
+            assertEquals(1,new MealLedger(local,c).read(new JSONObject(req.toString()).put("date",MealLedger.day(now+86400000L))).getInt("count"));
+            assertEquals(0,new MealLedger(local,c).read(new JSONObject(req.toString()).put("date","2020-01-01")).getInt("count"));
+            for(String date:new String[]{"2026-02-30","2026-13-01","not-a-date"})try{new MealLedger(local,c).read(new JSONObject(req.toString()).put("date",date));fail("Invalid calendar date");}catch(IllegalArgumentException expected){}
+            assertFalse(new MealLedger(local,c).read(new JSONObject(req.toString()).put("preview",true)).has("csv"));
+        }finally{context.deleteDatabase("daily-report.db");}
+    }
+    @Test public void continuousScannerIgnoresHeldCardButDetectsASecondPresentation() throws Exception {
+        ScanGate gate=new ScanGate();assertTrue(gate.read("A",1000));assertFalse(gate.read("A",1500));assertFalse(gate.read("B",1600));gate.ready();assertFalse(gate.read("A",1800));assertFalse(gate.read("A",3000));assertTrue(gate.read("B",3100));gate.ready();assertTrue(gate.read("A",3200));gate.ready();assertTrue(gate.read("A",5000));gate.hold();assertFalse(gate.read("C",6000));
+        assertEquals(ScanFeedback.Kind.ALLOWED,ScanFeedback.kind(new JSONObject().put("ok",true).put("status","accepted")));
+        for(String status:new String[]{"duplicate","recovered"})assertEquals(ScanFeedback.Kind.DUPLICATE,ScanFeedback.kind(new JSONObject().put("ok",true).put("status",status)));
+        assertEquals(ScanFeedback.Kind.PENDING,ScanFeedback.kind(new JSONObject().put("ok",true).put("status","unknown")));assertEquals(ScanFeedback.Kind.PENDING,ScanFeedback.kind(new JSONObject().put("ok",false)));assertEquals(0,ScanFeedback.delay(ScanFeedback.Kind.PENDING));
+    }
+    boolean containsText(android.view.View view,String text){if(view instanceof android.widget.TextView&&((android.widget.TextView)view).getText().toString().contains(text))return true;if(view instanceof android.view.ViewGroup)for(int i=0;i<((android.view.ViewGroup)view).getChildCount();i++)if(containsText(((android.view.ViewGroup)view).getChildAt(i),text))return true;return false;}
+    void waitText(MainActivity a,String text) throws Exception {long end=System.currentTimeMillis()+15000;java.util.concurrent.atomic.AtomicBoolean found=new java.util.concurrent.atomic.AtomicBoolean();while(System.currentTimeMillis()<end){InstrumentationRegistry.getInstrumentation().runOnMainSync(()->found.set(containsText(a.getWindow().getDecorView(),text)));if(found.get())return;Thread.sleep(70);}fail("UI text not found: "+text);}
+    void shellUi(String command) throws Exception {try(android.os.ParcelFileDescriptor fd=InstrumentationRegistry.getInstrumentation().getUiAutomation().executeShellCommand(command);InputStream in=new android.os.ParcelFileDescriptor.AutoCloseInputStream(fd)){in.readAllBytes();}}
+    void screenshot(String name) throws Exception {shellUi("mkdir -p /sdcard/Download/soboce-design");shellUi("screencap -p /sdcard/Download/soboce-design/"+name+".png");}
+    @Test public void redesignedScreensShowActualSavedScanAndDailyTotals() throws Exception {
+        Vault vault=new Vault(context);clearSetupVault(vault);vault.remove("needsProfile");
+        PeerConfig uiConfig=new PeerConfig(new JSONObject(sharedConfig(0,"d".repeat(64)).raw.toString()).put("node",0).toString());vault.put("peerConfig",uiConfig.raw.toString());vault.put("mode","p2p");
+        shellUi("pm grant "+context.getPackageName()+" android.permission.CAMERA");shellUi("pm grant "+context.getPackageName()+" android.permission.POST_NOTIFICATIONS");
+        MainActivity activity=(MainActivity)InstrumentationRegistry.getInstrumentation().startActivitySync(new android.content.Intent(context,MainActivity.class).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));
+        try{
+            waitText(activity,"INICIAR ESCANEO");screenshot("01-inicio");
+            InstrumentationRegistry.getInstrumentation().runOnMainSync(activity::openScanner);Thread.sleep(600);
+            String qr="SB1:"+"a".repeat(64);InstrumentationRegistry.getInstrumentation().runOnMainSync(()->activity.scanner.onCode(qr));waitText(activity,"ACCESO PERMITIDO");screenshot("02-acceso-permitido");
+            assertTrue(vault.get("pending").isEmpty());Thread.sleep(2000);InstrumentationRegistry.getInstrumentation().runOnMainSync(()->activity.scanner.onCode(qr));waitText(activity,"YA REGISTRADO");screenshot("03-duplicado");
+            assertEquals(1,new OfflineLedger(db,uiConfig).records().size());
+            InstrumentationRegistry.getInstrumentation().runOnMainSync(()->activity.scanner.show(new JSONObject()));waitText(activity,"SIN CONFIRMACIÓN");screenshot("04-pendiente");
+            long now=System.currentTimeMillis();new SharedLedger(db,uiConfig).scan(sharedRequest(0,"desayuno"),uiConfig.operator(-1),now);new SharedLedger(db,uiConfig).scan(sharedRequest(0,"cena"),uiConfig.operator(-1),now);
+            InstrumentationRegistry.getInstrumentation().runOnMainSync(activity::report);waitText(activity,"ENTREGAS DEL DÍA");screenshot("05-reporte-diario");
+            assertTrue(vault.get("pending").isEmpty());
+        }finally{InstrumentationRegistry.getInstrumentation().runOnMainSync(activity::finish);context.stopService(new android.content.Intent(context,PeerService.class));long end=System.currentTimeMillis()+5000;while(PeerService.engine!=null&&System.currentTimeMillis()<end)Thread.sleep(50);clearSetupVault(vault);}
+    }
     Process namedConnector(PeerConfig config) throws Exception {
         File dir=new File(context.getFilesDir(),"shared-live-test");assertTrue(dir.exists()||dir.mkdirs());File credentials=new File(dir,"credentials.json"),yaml=new File(dir,"config.yml");
         try(FileOutputStream out=new FileOutputStream(credentials)){out.write(config.raw.getJSONObject("tunnel").toString().getBytes(StandardCharsets.UTF_8));}

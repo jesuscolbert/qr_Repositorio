@@ -1,6 +1,8 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const vm=require('node:vm'),fs=require('node:fs'),crypto=require('node:crypto');
+test('diet replaces lunch in either order, preserving tariff and meal name',()=>{for(const first of ['dieta','almuerzo']){const f=fixture();assert.equal(f.call(f.scan({meal:first})).status,'accepted');assert.equal(f.call(f.scan({meal:first==='dieta'?'almuerzo':'dieta',plant:'B',token:f.other})).status,'duplicate');assert.equal(f.sheets.Consumos[1][5],first);assert.equal(f.sheets.Consumos[1][9],23);}});
+test('daily report includes totals and excludes other dates',()=>{const f=fixture();f.call(f.scan({meal:'dieta'}));f.call(f.scan({meal:'desayuno'}));let r=f.call({action:'report',period:'day',date:f.today,plant:'A',token:f.token});assert.equal(r.count,2);assert.equal(r.total,35);assert.equal(r.byMeal.dieta,1);assert.equal(r.csv.split('\r\n').length,3);assert.equal(f.call({action:'report',period:'day',date:'2020-01-01',plant:'A',token:f.token}).count,0);assert.equal(f.call({action:'report',period:'day',date:'2026-02-30',plant:'A',token:f.token}).ok,false);});
 function fixture(){
  let sheets={},locked=false,denyLock=false,flushes=0;
  function sheet(name){return {getDataRange:()=>({getValues:()=>sheets[name].map(r=>r.slice())}),appendRow:r=>sheets[name].push(r),getRange:(r,c,h=1,w=1)=>({setValue:v=>{sheets[name][r-1][c-1]=v;},setValues:rs=>rs.forEach((row,i)=>row.forEach((v,j)=>sheets[name][r-1+i][c-1+j]=v))})};}

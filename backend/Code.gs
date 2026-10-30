@@ -1,4 +1,7 @@
 const TZ = 'America/La_Paz';
+const MEALS = ['desayuno','almuerzo','cena','dieta'];
+function allowance_(meal){return meal==='dieta'?'almuerzo':meal;}
+function allowedMeal_(allowed,meal){const list=String(allowed).split(',');return list.includes(meal)||(meal==='dieta'&&list.includes('almuerzo'));}
 const HEADERS = {
  Personas: ['id','sap','nombre','planta','centroCosto','tipo','activo','qrHash','vence','comidas'],
  Operadores: ['id','nombre','planta','rol','activo','tokenHash'],
@@ -43,16 +46,20 @@ function handle_(req){
   return {ok:true,access:token,person:name,plant};
  }
  if(req.action==='report'){
-  require_(/^\d{4}-(0[1-9]|1[0-2])$/.test(req.month),'Mes inválido.');
-  const records=rows_('Consumos').filter(r=>date_(r.fecha).slice(0,7)===req.month&&r.planta===plant);
-  const cols=['fecha','hora','persona','nombre','comida','planta','operador','precio','centroCosto'];
-  const quote=v=>'"'+String(safe_(v)).replace(/"/g,'""')+'"';
-  return {ok:true,csv:'\uFEFF'+[cols.join(','),...records.map(r=>cols.map(k=>quote(k==='fecha'?date_(r[k]):r[k])).join(','))].join('\r\n'),count:records.length};
+  const period=req.period||'month';require_(period==='day'||period==='month','Período inválido.');
+  if(period==='day'){const d=new Date(String(req.date)+'T12:00:00Z');require_(/^\d{4}-\d{2}-\d{2}$/.test(req.date)&&!isNaN(d.getTime())&&d.toISOString().slice(0,10)===req.date,'Fecha inválida.');}
+  else require_(/^\d{4}-(0[1-9]|1[0-2])$/.test(req.month),'Mes inválido.');
+  const records=rows_('Consumos').filter(r=>(period==='day'?date_(r.fecha)===req.date:date_(r.fecha).slice(0,7)===req.month)&&r.planta===plant);
+  const byMeal=Object.fromEntries(MEALS.map(m=>[m,0])),amounts=Object.fromEntries(MEALS.map(m=>[m,0]));let total=0;
+  for(const r of records){byMeal[r.comida]=(byMeal[r.comida]||0)+1;amounts[r.comida]=(amounts[r.comida]||0)+Number(r.precio);total+=Number(r.precio);}
+  const cols=['fecha','hora','persona','nombre','comida','planta','operador','precio','centroCosto'];const quote=v=>'"'+String(safe_(v)).replace(/"/g,'""')+'"';
+  const result={ok:true,count:records.length,total,byMeal,amounts,conflicts:0,period,date:req.date||'',month:req.month||'',items:records.slice(period==='day'?0:-100).reverse().map(r=>({...r,fecha:date_(r.fecha)}))};
+  if(req.preview!==true&&req.preview!=='true')result.csv='\uFEFF'+[cols.join(','),...records.map(r=>cols.map(k=>quote(k==='fecha'?date_(r[k]):r[k])).join(','))].join('\r\n');return result;
  }
  if(req.action==='people')return {ok:true,people:rows_('Personas').filter(p=>active_(p.activo)&&p.planta===plant).map(publicPerson_)};
  if(req.action==='today'){const rs=rows_('Consumos').filter(r=>date_(r.fecha)===today&&r.planta===plant);return {ok:true,count:rs.length,total:rs.reduce((a,r)=>a+Number(r.precio),0),items:rs.slice(-30).reverse().map(r=>({nombre:r.nombre,comida:r.comida,hora:r.hora}))};}
  if(req.action==='scan'){
-  require_(['desayuno','almuerzo','cena'].includes(req.meal),'Comida inválida.');
+  require_(MEALS.includes(req.meal),'Comida inválida.');
   require_(/^[a-f0-9-]{36}$/.test(String(req.requestId)),'Identificador de solicitud inválido.');
   require_(/^SB1:[a-f0-9]{64}$/.test(String(req.qr)),'QR no reconocido.');
   const records=rows_('Consumos');
@@ -61,14 +68,14 @@ function handle_(req){
   const p=rows_('Personas').find(p=>p.qrHash===hash_(req.qr));require_(p,'QR revocado o desconocido.');
   require_(active_(p.activo),'Persona inactiva.');
   require_(!p.vence||date_(p.vence)>=today,'Autorización vencida.');
-  require_(String(p.comidas).split(',').includes(req.meal),'Esta comida no está autorizada.');
+  require_(allowedMeal_(p.comidas,req.meal),'Esta comida no está autorizada.');
   require_(p.tipo!=='VISITA'||p.planta===plant,'Visita autorizada para otra planta.');
-  const key=p.id+'|'+today+'|'+req.meal;
+  const key=p.id+'|'+today+'|'+allowance_(req.meal);
   const previous=records.find(r=>r.clave===key);
   if(previous)return {ok:true,status:'duplicate',message:'Ya consumió esta comida.',person:p.nombre,plant:previous.planta,time:previous.hora};
-  const rate=rows_('Tarifas').filter(r=>date_(r.desde)<=today).sort((a,b)=>date_(b.desde).localeCompare(date_(a.desde)))[0];require_(rate&&Number.isFinite(Number(rate[req.meal]))&&Number(rate[req.meal])>=0,'No hay una tarifa válida.');
+  const rate=rows_('Tarifas').filter(r=>date_(r.desde)<=today).sort((a,b)=>date_(b.desde).localeCompare(date_(a.desde)))[0];require_(rate&&Number.isFinite(Number(rate[allowance_(req.meal)]))&&Number(rate[allowance_(req.meal)])>=0,'No hay una tarifa válida.');
   const time=Utilities.formatDate(now,TZ,'HH:mm:ss');
-  add_('Consumos',{clave:key,solicitud:req.requestId,persona:p.id,nombre:p.nombre,fecha:today,comida:req.meal,planta:plant,operador:op.id,hora:time,precio:Number(rate[req.meal]),centroCosto:p.centroCosto,qrHash:hash_(req.qr)});
+  add_('Consumos',{clave:key,solicitud:req.requestId,persona:p.id,nombre:p.nombre,fecha:today,comida:req.meal,planta:plant,operador:op.id,hora:time,precio:Number(rate[allowance_(req.meal)]),centroCosto:p.centroCosto,qrHash:hash_(req.qr)});
   return {ok:true,status:'accepted',message:'Entrega autorizada',person:p.nombre,plant,time};
  }
  if(req.action==='issue'){
@@ -83,7 +90,7 @@ function handle_(req){
   require_(/^\d{4}-\d{2}-\d{2}$/.test(req.expires)&&req.expires>=today,'Fecha de vencimiento inválida.');
   const validDate=new Date(req.expires+'T12:00:00Z');require_(!isNaN(validDate.getTime())&&validDate.toISOString().slice(0,10)===req.expires,'Fecha inexistente.');
   require_(req.expires<=Utilities.formatDate(new Date(now.getTime()+30*86400000),TZ,'yyyy-MM-dd'),'La visita puede durar hasta 30 días.');
-  const meals=String(req.meals||'').split(',');require_(meals.length&&meals.every(m=>['desayuno','almuerzo','cena'].includes(m)),'Selecciona comidas válidas.');
+  const meals=String(req.meals||'').split(',');require_(meals.length&&meals.every(m=>MEALS.includes(m)),'Selecciona comidas válidas.');
   const id='VIS-'+hash_(document),all=rows_('Personas'),existing=all.find(p=>p.id===id);
   require_(!existing||existing.planta===plant||op.rol==='admin','Visitante registrado en otra planta. Contacta a administración.');
   const qr='SB1:'+secret_(), p={id,sap:'',nombre:name,planta:plant,centroCosto:text_(req.costCenter,50),tipo:'VISITA',activo:true,qrHash:hash_(qr),vence:req.expires,comidas:meals.join(',')};

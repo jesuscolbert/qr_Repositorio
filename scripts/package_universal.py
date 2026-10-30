@@ -11,8 +11,8 @@ def main():
     assert not {'identityPrivate','identities','device','operator','node','apiToken'}.intersection(bundle)
     assert len(bundle['networkKey'])==64 and len(json.loads(bundle['manifest'])['nodes'])==4
     data=json.dumps(bundle,ensure_ascii=False,separators=(',',':')).encode('utf-8')
-    target=ROOT/'private/installer-1.5.0';target.mkdir(parents=True,exist_ok=True)
-    unsigned=target/'unsigned.apk';aligned=target/'aligned.apk';final=target/'SOBOCE-Comedor-1.5.0-Todos.apk'
+    target=ROOT/'private/installer-1.6.0';target.mkdir(parents=True,exist_ok=True)
+    unsigned=target/'unsigned.apk';aligned=target/'aligned.apk';final=target/'SOBOCE-Comedor-1.6.0-Todos.apk'
     with zipfile.ZipFile(base) as src,zipfile.ZipFile(unsigned,'w') as dst:
         assert not {'assets/comedor-setup.json','assets/comedor-shared.json'}.intersection(src.namelist())
         for entry in src.infolist():

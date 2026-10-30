@@ -113,10 +113,10 @@ final class OfflineLedger {
         String plant=request.getString("plant"),meal=request.getString("meal"),id=r.getString("persona"),qr=request.getString("qr");
         boolean known=false;JSONArray plants=config.seed.getJSONArray("plants");for(int i=0;i<plants.length();i++)known|=plants.getString(i).equals(plant);
         PeerConfig.require(known&&(op.getString("role").equals("admin")||op.getString("plant").equals(plant)),"Registro fuera de la planta autorizada.");
-        PeerConfig.require(Arrays.asList("desayuno","almuerzo","cena").contains(meal)&&!id.isEmpty()&&id.length()<=100,"Persona o comida inválida.");
+        PeerConfig.require(Meals.ALL.contains(meal)&&!id.isEmpty()&&id.length()<=100,"Persona o comida inválida.");
         PeerConfig.require(request.getString("requestId").matches("[a-f0-9-]{36}")&&request.getString("requestId").equals(r.getString("solicitud")),"Solicitud incompatible.");
         PeerConfig.require((qr.matches("SB1:[a-f0-9]{64}")||PeerCards.format(qr))&&PeerConfig.hash(qr).equals(r.getString("qrHash")),"Credencial incompatible.");
-        PeerConfig.require(r.getString("fecha").equals(MealLedger.day(time))&&r.getString("hora").equals(MealLedger.time(time))&&r.getString("clave").equals(id+"|"+MealLedger.day(time)+"|"+meal),"Fecha o identidad incompatible.");
+        PeerConfig.require(r.getString("fecha").equals(MealLedger.day(time))&&r.getString("hora").equals(MealLedger.time(time))&&r.getString("clave").equals(id+"|"+MealLedger.day(time)+"|"+Meals.allowance(meal)),"Fecha o identidad incompatible.");
         PeerConfig.require(r.getString("planta").equals(plant)&&r.getString("comida").equals(meal)&&r.getString("operador").equals(op.getString("name"))&&Double.isFinite(r.getDouble("precio"))&&r.getDouble("precio")>=0,"Datos de consumo inválidos.");
         // Authenticate the issuer's historical receipt; do not apply today's QR revocations retroactively.
         PeerConfig.require(!r.getString("nombre").isEmpty()&&r.getString("nombre").length()<=200&&r.getString("centroCosto").length()<=100,"Datos personales inválidos.");
