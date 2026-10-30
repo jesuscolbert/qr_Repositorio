@@ -68,7 +68,7 @@ public class MainActivity extends Activity {
   screen("Red de teléfonos","Cada equipo conserva una copia del historial. Para registrar deben responder al menos tres.");PeerEngine e=PeerService.engine;
   label(e==null?"Red detenida":e.state,20,navy);if(!PeerService.failure.isEmpty())label(PeerService.failure,16,Color.rgb(160,50,30));
   label("Mantén internet y fecha automática activados durante el servicio. No borres los datos ni uses el mismo archivo en dos teléfonos.",15,Color.DKGRAY);
-  button("Actualizar estado",this::network);button("Iniciar red",this::connect);
+  button("Actualizar estado",this::network);button("Iniciar red",this::connect);button("Ajustes de batería",()->{try{startActivity(new Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));}catch(Exception e2){error("Abre los ajustes de batería del teléfono y revisa SOBOCE Comedor.");}});label("Si Android pausa la app con la pantalla apagada, configura SOBOCE Comedor sin restricciones de batería y vuelve a comprobar la red.",14,Color.DKGRAY);
   button("Detener red en este teléfono",()->new AlertDialog.Builder(this).setTitle("Detener este equipo").setMessage("Los demás necesitarán tres teléfonos activos para autorizar entregas.").setNegativeButton("Cancelar",null).setPositiveButton("Detener",(d,w)->{stopService(new Intent(this,PeerService.class));network();}).show());button("Volver",this::home);
  }
  @Override public void onBackPressed(){if(busy)return;if(session!=null)home();else super.onBackPressed();}

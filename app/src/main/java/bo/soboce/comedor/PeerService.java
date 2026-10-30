@@ -22,23 +22,26 @@ public final class PeerService extends Service {
         PendingIntent open=PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class),PendingIntent.FLAG_IMMUTABLE);
         startForeground(41,new Notification.Builder(this,"peer-network").setSmallIcon(bo.soboce.comedor.R.drawable.ic_launcher).setContentTitle("SOBOCE · Red de teléfonos activa").setContentText("Mantiene y sincroniza el registro del comedor.").setContentIntent(open).setOngoing(true).build());
         awake=getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"SOBOCE:peer-network");
+        awake.setReferenceCounted(false);
         tasks.execute(()->{
             try{
                 PeerConfig config=new PeerConfig(new Vault(this).get("peerConfig"));
-                PeerEngine ready=new PeerEngine(this,config);ready.start();engine=ready;startTunnel(config);
+                PeerEngine ready=new PeerEngine(this,config);
+                synchronized(PeerService.this){if(stopped){ready.close();return;}ready.start();engine=ready;startTunnel(config);}
             }catch(Exception e){failure="No se pudo iniciar la red. Revisa el archivo de configuración y la compatibilidad del teléfono.";stopSelf();}
         });
         tasks.scheduleWithFixedDelay(()->{
             if(stopped)return;
             try{
-                if(!awake.isHeld())awake.acquire(10*60*1000L);
+                synchronized(PeerService.this){if(stopped)return;awake.acquire(10*60*1000L);}
                 PeerEngine current=engine;if(current==null)return;
                 if(tunnel==null||!tunnel.isAlive())startTunnel(current.config);
                 current.sync();
             }catch(Exception e){failure="El túnel no pudo conectarse. Comprueba internet.";}
         },2,15,TimeUnit.SECONDS);
     }
-    private void startTunnel(PeerConfig config) throws Exception {
+    private synchronized void startTunnel(PeerConfig config) throws Exception {
+        if(stopped)return;
         File binary=new File(getApplicationInfo().nativeLibraryDir,"libcloudflared.so");
         if(!binary.canExecute())throw new IOException("Conector Android no incluido.");
         File dir=new File(getFilesDir(),"peer-tunnel");if(!dir.exists()&&!dir.mkdirs())throw new IOException("Directorio");
@@ -47,11 +50,11 @@ public final class PeerService extends Service {
         String text="tunnel: "+config.raw.getJSONObject("tunnel").getString("TunnelID")+"\ncredentials-file: "+credentials.getAbsolutePath()+"\nprotocol: http2\ningress:\n  - hostname: "+new java.net.URL(config.nodes.getJSONObject(config.node).getString("url")).getHost()+"\n    service: http://127.0.0.1:8787\n  - service: http_status:404\n";
         try(FileOutputStream out=new FileOutputStream(yaml)){out.write(text.getBytes(StandardCharsets.UTF_8));}
         ProcessBuilder builder=new ProcessBuilder(binary.getAbsolutePath(),"tunnel","--config",yaml.getAbsolutePath(),"--no-autoupdate","run",config.raw.getJSONObject("tunnel").getString("TunnelID"));
-        builder.directory(dir);builder.environment().put("HOME",dir.getAbsolutePath());builder.redirectErrorStream(true);tunnel=builder.start();
+        builder.directory(dir);builder.environment().put("HOME",dir.getAbsolutePath());builder.redirectErrorStream(true);tunnel=builder.start();failure="";
         final Process running=tunnel;
         Thread drain=new Thread(()->{try(InputStream in=running.getInputStream()){byte[] bytes=new byte[4096];while(in.read(bytes)!=-1){/* Discard connector logs: no credentials or request data on disk. */}}catch(IOException ignored){}},"tunnel-output");drain.setDaemon(true);drain.start();
     }
     @Override public int onStartCommand(Intent intent,int flags,int id){return START_NOT_STICKY;}
     @Override public IBinder onBind(Intent intent){return null;}
-    @Override public void onDestroy(){stopped=true;tasks.shutdownNow();Process p=tunnel;if(p!=null)p.destroy();PeerEngine e=engine;engine=null;if(e!=null)e.close();if(awake!=null&&awake.isHeld())awake.release();super.onDestroy();}
+    @Override public synchronized void onDestroy(){stopped=true;tasks.shutdownNow();Process p=tunnel;if(p!=null)p.destroy();PeerEngine e=engine;engine=null;if(e!=null)e.close();if(awake!=null&&awake.isHeld())awake.release();super.onDestroy();}
 }

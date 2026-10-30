@@ -39,10 +39,32 @@ public class PeerDatabaseTest {
         String value=scan(0,"Planta 0","almuerzo",UUID.randomUUID().toString());db.prepare(1,44);assertNotNull(db.accept(1,44,value));db.close();db=new PeerDatabase(context,config);
         assertFalse(db.prepare(1,40).granted());assertEquals(value,db.prepare(1,48).value());assertNull(db.accept(1,44,value));
     }
+    @Test public void aLostResponseRecoveredDuringCatchupDoesNotAuthorizeAgain() throws Exception {
+        String id=UUID.randomUUID().toString();String first=scan(0,"Planta 0","almuerzo",id);
+        String retry=new JSONObject(first).put("attempt","different-attempt").toString();
+        commit(1,first);commit(2,retry);
+        JSONObject saved=db.get("results",id);
+        assertEquals("accepted",PeerEngine.replyForAttempt(saved,first).getString("status"));
+        assertEquals("recovered",PeerEngine.replyForAttempt(saved,retry).getString("status"));
+        assertEquals("recovered",PeerEngine.replyForAttempt(saved,null).getString("status"));
+        assertEquals(1,db.rows("meals").size());
+    }
     @Test public void rejectsFakeMajority() throws Exception {
         String value=scan(0,"Planta 0","almuerzo",UUID.randomUUID().toString());
         try{db.learn(new QuorumLog.Decision(1,4,value,List.of(new QuorumLog.Vote(0,config.vote(0,1,4,value)))));fail("Minority accepted");}catch(IllegalArgumentException expected){}
         assertEquals(0,db.applied());assertEquals(0,db.rows("meals").size());
+    }
+    @Test public void visitorRenewalPreservesIdentityAndMealLimit() throws Exception {
+        String today=MealLedger.day(1793361600000L),firstQr="SB1:"+"c".repeat(64),secondQr="SB1:"+"d".repeat(64);
+        JSONObject visitor=new JSONObject().put("action","visitor").put("plant","Planta 1").put("name","Visitante de prueba").put("document","CI BO 1234567").put("costCenter","TEST").put("expires",today).put("meals","almuerzo").put("newQr",firstQr).put("requestId",UUID.randomUUID().toString());
+        commit(1,new JSONObject().put("actor",1).put("time",1793361600000L).put("request",visitor).toString());
+        JSONObject meal=new JSONObject(scan(1,"Planta 1","almuerzo",UUID.randomUUID().toString()));meal.getJSONObject("request").put("qr",firstQr);commit(2,meal.toString());
+        visitor.put("newQr",secondQr).put("requestId",UUID.randomUUID().toString());commit(3,new JSONObject().put("actor",1).put("time",1793361600000L).put("request",visitor).toString());
+        String retry=UUID.randomUUID().toString();meal=new JSONObject(scan(1,"Planta 1","almuerzo",retry));meal.getJSONObject("request").put("qr",secondQr);commit(4,meal.toString());
+        assertEquals("duplicate",db.get("results",retry).getJSONObject("reply").getString("status"));assertEquals(1,db.rows("meals").size());
+        String revoked=UUID.randomUUID().toString();meal=new JSONObject(scan(1,"Planta 1","almuerzo",revoked));meal.getJSONObject("request").put("qr",firstQr);commit(5,meal.toString());assertFalse(db.get("results",revoked).getJSONObject("reply").getBoolean("ok"));
+        String wrongPlant=UUID.randomUUID().toString();meal=new JSONObject(scan(2,"Planta 2","almuerzo",wrongPlant));meal.getJSONObject("request").put("qr",secondQr);commit(6,meal.toString());assertFalse(db.get("results",wrongPlant).getJSONObject("reply").getBoolean("ok"));
+        assertEquals(2,db.rows("people").size());assertEquals(1,db.rows("meals").size());
     }
     @Test public void packagedConnectorRunsOnAndroid() throws Exception {
         File binary=new File(context.getApplicationInfo().nativeLibraryDir,"libcloudflared.so");assertTrue(binary.canExecute());

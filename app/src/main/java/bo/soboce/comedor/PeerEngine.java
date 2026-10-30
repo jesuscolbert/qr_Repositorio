@@ -98,7 +98,7 @@ final class PeerEngine implements QuorumLog.Network, AutoCloseable {
         if(existing!=null){
             JSONObject old=existing.getJSONObject("request");
             PeerConfig.require(existing.getInt("actor")==config.node&&old.getString("action").equals(action)&&old.optString("qr").equals(r.optString("qr"))&&old.optString("meal").equals(r.optString("meal"))&&old.optString("plant").equals(r.optString("plant")),"Solicitud incompatible.");
-            JSONObject reply=existing.getJSONObject("reply");if(reply.optString("status").equals("accepted"))reply.put("status","recovered").put("message","Registro anterior confirmado. No entregar otra ración.");return reply;
+            return replyForAttempt(existing,null);
         }
         // A wrong date on one phone must not create a different daily meal key.
         int clocks=0;long now=System.currentTimeMillis();String today=MealLedger.day(now);
@@ -107,8 +107,11 @@ final class PeerEngine implements QuorumLog.Network, AutoCloseable {
         if(action.equals("issue")||action.equals("visitor"))r.put("newQr","SB1:"+PeerConfig.random());
         String command=new JSONObject().put("request",r).put("actor",config.node).put("time",now).put("attempt",UUID.randomUUID().toString()).toString();consensus.append(command);
         JSONObject result=db.get("results",r.getString("requestId"));if(result==null)throw new IOException("Sin confirmación.");
-        JSONObject reply=result.getJSONObject("reply");
-        if(!result.getString("commandHash").equals(PeerConfig.hash(command))&&reply.optString("status").equals("accepted"))reply.put("status","recovered").put("message","Registro anterior confirmado. No entregar otra ración.");
+        return replyForAttempt(result,command);
+    }
+    static JSONObject replyForAttempt(JSONObject saved,String command) throws Exception {
+        JSONObject reply=new JSONObject(saved.getJSONObject("reply").toString());
+        if((command==null||!saved.getString("commandHash").equals(PeerConfig.hash(command)))&&reply.optString("status").equals("accepted"))reply.put("status","recovered").put("message","Registro anterior confirmado. No entregar otra ración.");
         return reply;
     }
     @Override public void close(){closed=true;try{if(server!=null)server.close();}catch(IOException ignored){}clients.shutdownNow();/* SQLite is kept open while already running requests unwind. */}

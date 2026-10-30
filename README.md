@@ -78,4 +78,4 @@ No subir `private/`, `config/`, `config.zip` ni certificados a GitHub. Incluyen 
 
 ## Activación pendiente
 
-Google Sheets y Apps Script todavía deben desplegarse en la cuenta administradora siguiendo los pasos anteriores. Antes de operar el comedor, configurar la URL y las credenciales en los teléfonos y probar dos dispositivos contra la misma implementación. La compilación de la APK no activa por sí sola el servicio de Google.
+Google Sheets y Apps Script todavía deben desplegarse si se elige ese modo. En P2P, importar las cuatro configuraciones privadas y comprobar conectividad, escaneo simultáneo y recuperación en los equipos reales. Las pruebas de GitHub verifican el protocolo, persistencia SQLite y un túnel real desde el emulador con datos sintéticos. No sustituyen la prueba de servicio en los cuatro teléfonos, especialmente con pantalla apagada y restricciones de batería.
