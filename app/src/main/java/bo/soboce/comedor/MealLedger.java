@@ -46,9 +46,10 @@ final class MealLedger {
         }
         if(action.equals("scan")){
             String qr=r.optString("qr"),meal=r.optString("meal");
-            PeerConfig.require(qr.matches("SB1:[a-f0-9]{64}")&&MEALS.contains(meal),"QR o comida inválidos.");
+            PeerConfig.require((qr.matches("SB1:[a-f0-9]{64}")||PeerCards.format(qr))&&MEALS.contains(meal),"QR o comida inválidos.");
             String hash=PeerConfig.hash(qr);JSONObject person=null;
-            for(JSONObject p:db.rows("people"))if(p.optString("qrHash").equals(hash)){person=p;break;}
+            if(PeerCards.format(qr))person=PeerCards.resolve(db,config,qr,when);
+            else for(JSONObject p:db.rows("people"))if(p.optString("qrHash").equals(hash)){person=p;break;}
             PeerConfig.require(person!=null,"QR revocado o desconocido.");JSONObject p=person;
             PeerConfig.require(p.optBoolean("activo"),"Persona inactiva.");
             PeerConfig.require(p.optString("vence").isEmpty()||p.getString("vence").compareTo(today)>=0,"Autorización vencida.");

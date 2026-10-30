@@ -79,6 +79,84 @@ public class PeerDatabaseTest {
         Process p=new ProcessBuilder(binary.getAbsolutePath(),"--version").redirectErrorStream(true).start();
         try{assertTrue("Connector did not exit",p.waitFor(20,TimeUnit.SECONDS));ByteArrayOutputStream output=new ByteArrayOutputStream();try(InputStream in=p.getInputStream()){byte[] b=new byte[2048];int n;while((n=in.read(b))!=-1)output.write(b,0,n);}assertEquals(output.toString("UTF-8"),0,p.exitValue());assertTrue(output.toString("UTF-8").contains("2026.10.6"));}finally{p.destroy();}
     }
+    JSONObject workerRequest(String plant,String id) throws Exception {return new JSONObject().put("action","issue").put("plant",plant).put("personId",id);}
+    JSONObject visitorRequest(String plant,long time) throws Exception {return new JSONObject().put("action","visitor").put("plant",plant).put("name","Visita sin conexión").put("document","CI BO 1234567").put("costCenter","TEST").put("expires",MealLedger.day(time)).put("meals","almuerzo");}
+    String consumeCard(int actor,String plant,String meal,String qr,long when) throws Exception {
+        String id=UUID.randomUUID().toString();JSONObject command=new JSONObject(scan(actor,plant,meal,id)).put("time",when);command.getJSONObject("request").put("qr",qr);commit(db.applied()+1,command.toString());return id;
+    }
+    @Test public void supervisorIssuesOwnPlantOfflineWithoutChangingOldQrOrLog() throws Exception {
+        JSONObject person=new JSONObject(db.get("people","SAP-12345").toString()).put("id","SAP-67890").put("sap","67890").put("planta","Planta 1");db.save("people","SAP-67890",person);
+        JSONObject card=PeerCards.request(db,identities[1],workerRequest("Planta 1","SAP-67890"),1793361600000L);
+        assertTrue(card.getBoolean("ok"));assertTrue(PeerCards.format(card.getString("qr")));
+        assertEquals("SAP-67890",PeerCards.resolve(db,config,card.getString("qr"),1793361600000L).getString("id"));
+        assertEquals(0,db.applied());assertEquals(0,db.history(0,20).length());
+        assertEquals(person.getString("qrHash"),db.get("people","SAP-67890").getString("qrHash"));
+        assertFalse(PeerCards.request(db,identities[1],workerRequest("Planta 0","SAP-12345"),1793361600000L).getBoolean("ok"));
+    }
+    @Test public void cardsWorkWithNetworkEngineStopped() throws Exception {
+        PeerEngine offline=new PeerEngine(context,config);offline.close();
+        try {
+            assertTrue(offline.request(workerRequest("Planta 0","SAP-12345")).getBoolean("ok"));
+            assertTrue(offline.request(visitorRequest("Planta 0",System.currentTimeMillis())).getBoolean("ok"));
+            assertEquals(0,offline.db.applied());
+        } finally {offline.db.close();}
+    }
+    @Test public void newCardsCopiesAndLegacyQrShareTheSameMealLimit() throws Exception {
+        long now=1793361600000L;
+        String first=PeerCards.request(db,config,workerRequest("Planta 0","SAP-12345"),now).getString("qr");
+        String copy=PeerCards.request(db,config,workerRequest("Planta 0","SAP-12345"),now).getString("qr");
+        String a=consumeCard(1,"Planta 1","almuerzo",first,now),b=consumeCard(0,"Planta 0","almuerzo",copy,now),c=consumeCard(2,"Planta 2","almuerzo","SB1:"+"a".repeat(64),now);
+        assertEquals("accepted",db.get("results",a).getJSONObject("reply").getString("status"));
+        for(String id:new String[]{b,c})assertEquals("duplicate",db.get("results",id).getJSONObject("reply").getString("status"));
+        assertEquals(1,db.rows("meals").size());
+    }
+    @Test public void offlineVisitorCardsHaveGlobalIdentityAndEnforceHostExpiryAndMeals() throws Exception {
+        long now=1793361600000L;
+        String atOne=PeerCards.request(db,identities[1],visitorRequest("Planta 1",now),now).getString("qr");
+        String atZero=PeerCards.request(db,config,visitorRequest("Planta 0",now).put("document","ci-bo-1234567"),now).getString("qr");
+        assertEquals(1,db.rows("people").size()); // Issuing alone does not change the shared projection.
+        String accepted=consumeCard(1,"Planta 1","almuerzo",atOne,now),duplicate=consumeCard(0,"Planta 0","almuerzo",atZero,now);
+        assertEquals("accepted",db.get("results",accepted).getJSONObject("reply").getString("status"));
+        assertEquals("duplicate",db.get("results",duplicate).getJSONObject("reply").getString("status"));
+        for(String id:new String[]{consumeCard(0,"Planta 0","almuerzo",atOne,now),consumeCard(1,"Planta 1","cena",atOne,now),consumeCard(1,"Planta 1","almuerzo",atOne,now+86400000L)})assertFalse(db.get("results",id).getJSONObject("reply").getBoolean("ok"));
+        assertEquals(1,db.rows("meals").size());
+    }
+    @Test public void tamperedForeignAndOutOfScopeSignedCardsAreRejected() throws Exception {
+        long now=1793361600000L;String qr=PeerCards.request(db,config,workerRequest("Planta 0","SAP-12345"),now).getString("qr");
+        String[] parts=qr.substring(4).split("\\.");JSONObject body=new JSONObject(new String(Base64.getUrlDecoder().decode(parts[0]),StandardCharsets.UTF_8));body.put("id","SAP-99999");
+        String tampered="SB2:"+Base64.getUrlEncoder().withoutPadding().encodeToString(body.toString().getBytes(StandardCharsets.UTF_8))+"."+parts[1];
+        assertFalse(db.get("results",consumeCard(0,"Planta 0","almuerzo",tampered,now)).getJSONObject("reply").getBoolean("ok"));
+        body.put("id","SAP-12345").put("issuer",1);String text=body.toString();String outOfScope="SB2:"+Base64.getUrlEncoder().withoutPadding().encodeToString(text.getBytes(StandardCharsets.UTF_8))+"."+Base64.getUrlEncoder().withoutPadding().encodeToString(Base64.getDecoder().decode(identities[1].sign("card|"+config.cluster+"|"+text)));
+        assertFalse(db.get("results",consumeCard(0,"Planta 0","almuerzo",outOfScope,now)).getJSONObject("reply").getBoolean("ok"));
+        JSONObject manifest=new JSONObject(config.raw.getString("manifest")).put("otherNetwork",true);
+        PeerConfig foreign=new PeerConfig(new JSONObject(config.raw.toString()).put("manifest",manifest.toString()).toString());
+        String other=PeerCards.request(db,foreign,workerRequest("Planta 0","SAP-12345"),now).getString("qr");
+        assertFalse(db.get("results",consumeCard(0,"Planta 0","almuerzo",other,now)).getJSONObject("reply").getBoolean("ok"));assertEquals(0,db.rows("meals").size());
+    }
+    @Test public void updateReplaysHistoryAndRetainsAcceptedVotes() throws Exception {
+        long now=1793361600000L;consumeCard(0,"Planta 0","almuerzo","SB1:"+"a".repeat(64),now);
+        String qr=PeerCards.request(db,config,workerRequest("Planta 0","SAP-12345"),now).getString("qr");String id=consumeCard(0,"Planta 0","cena",qr,now);
+        String pending=config.seal(new JSONObject(scan(0,"Planta 0","desayuno",UUID.randomUUID().toString())));db.prepare(3,100);db.accept(3,100,pending);long oldBallot=db.nextBallot(0,100);
+        db.getWritableDatabase().delete("meals",null,null);db.getWritableDatabase().delete("results",null,null);db.getWritableDatabase().setVersion(1);db.close();
+        db=new PeerDatabase(context,config);
+        assertEquals(2,db.applied());assertEquals(2,db.rows("meals").size());assertEquals("accepted",db.get("results",id).getJSONObject("reply").getString("status"));
+        assertFalse(db.prepare(3,96).granted());assertEquals(pending,db.prepare(3,104).value());assertTrue(db.nextBallot(0,oldBallot)>oldBallot);
+    }
+    @Test public void olderProposersCannotFormAMixedVersionQuorum() throws Exception {
+        PeerEngine engine=new PeerEngine(context,config);
+        try{
+            assertEquals(2,engine.dispatch(new JSONObject().put("method","status")).getInt("protocol"));
+            try{engine.dispatch(new JSONObject().put("method","prepare").put("slot",1).put("ballot",4));fail("Old proposer received a promise");}catch(IllegalArgumentException expected){}
+            assertTrue(engine.dispatch(new JSONObject().put("method","prepare").put("protocol",2).put("slot",1).put("ballot",4)).getBoolean("granted"));
+        }finally{engine.close();engine.db.close();}
+    }
+    @Test public void offlineVisitorQrCanBeReadByTheScanner() throws Exception {
+        String qr=PeerCards.request(db,identities[1],visitorRequest("Planta 1",1793361600000L).put("name","Visitante de prueba con nombre completo"),1793361600000L).getString("qr");
+        com.google.zxing.common.BitMatrix matrix=new com.google.zxing.MultiFormatWriter().encode(qr,com.google.zxing.BarcodeFormat.QR_CODE,700,700);int[] pixels=new int[700*700];
+        for(int y=0;y<700;y++)for(int x=0;x<700;x++)pixels[y*700+x]=matrix.get(x,y)?0xff000000:0xffffffff;
+        com.google.zxing.BinaryBitmap image=new com.google.zxing.BinaryBitmap(new com.google.zxing.common.HybridBinarizer(new com.google.zxing.RGBLuminanceSource(700,700,pixels)));
+        assertEquals(qr,new com.google.zxing.qrcode.QRCodeReader().decode(image).getText());
+    }
     @Test public void androidConnectorReachesOriginThroughCloudflare() throws Exception {
         // Ephemeral tunnel with synthetic data only; no production credentials in CI.
         File binary=new File(context.getApplicationInfo().nativeLibraryDir,"libcloudflared.so");

@@ -4,9 +4,17 @@ Aplicación Android nativa para encargados de comedor. Mínimo Android 8.0; el m
 
 ## Red de cuatro teléfonos (piloto)
 
+### Emitir tarjetas con un solo encargado — versión 1.2.0
+
+Cada encargado puede crear, guardar y compartir QR de los trabajadores de su planta con su teléfono solamente, incluso con la red detenida. También puede generar QR temporales para visitantes, indicando documento, planta, comidas, centro de costo y vencimiento de hasta 30 días. La emisión no registra una comida ni escribe en el historial compartido: el propio teléfono firma la tarjeta y los demás verifican su firma al escanearla.
+
+Las tarjetas de un trabajador identifican siempre el mismo SAP; las de un visitante usan la misma identidad derivada de su documento normalizado. Varias tarjetas, emitidas incluso por distintos encargados autorizados, comparten el mismo límite diario por comida. Las visitas quedan limitadas a la planta y comidas de su tarjeta. Crear otra tarjeta no revoca las anteriores: una tarjeta de visita conserva su vencimiento. Los QR SB1 anteriores siguen reconociéndose y comparten el mismo registro de consumos con las tarjetas SB2 nuevas.
+
+Actualizar la APK en los cuatro equipos sin desinstalar ni borrar datos, usando los mismos archivos de configuración. La actualización reconstruye las vistas locales a partir del historial firmado y conserva los votos, promesas y consumos. Los teléfonos actualizados solo votan propuestas de la nueva versión del protocolo; para registrar comidas se necesitan al menos tres actualizados y conectados. Esto evita mezclar dos reglas de validación de QR durante la actualización. La emisión de tarjetas funciona desde el primer teléfono actualizado.
+
 Cada teléfono ejecuta un receptor local y su propio conector Cloudflare. La PC solo prepara la instalación; no participa durante el servicio. Se necesitan cuatro túneles y cuatro nombres diferentes. Las réplicas de un mismo túnel distribuyen conexiones, no replican bases de datos: no reutilizar el túnel de caja, GPS, juego o delivery.
 
-El historial usa Paxos con membresía fija de cuatro equipos. Una decisión exige tres votos persistidos; luego cada teléfono aplica las operaciones en el mismo orden. Un teléfono desconectado descarga las decisiones que le faltan al volver. La clave de consumo sigue siendo persona + fecha de Bolivia + comida, global para todas las plantas. El cambio de QR y las autorizaciones de visitantes se ordenan en el mismo historial. Los reintentos recuperan el resultado sin autorizar otra ración.
+El historial usa Paxos con membresía fija de cuatro equipos. Una decisión exige tres votos persistidos; luego cada teléfono aplica las operaciones en el mismo orden. Un teléfono desconectado descarga las decisiones que le faltan al volver. La clave de consumo sigue siendo persona + fecha de Bolivia + comida, global para todas las plantas. Las operaciones de emisión de versiones anteriores se conservan en el historial; las tarjetas nuevas se emiten localmente. Los reintentos recuperan el resultado sin autorizar otra ración.
 
 Con dos o menos equipos conectados no se autorizan entregas. Los informes muestran la copia local y pueden estar atrasados. Se requieren internet, fecha automática y el servicio de red activo en al menos tres teléfonos. La app muestra una notificación mientras mantiene la conexión. Android puede suspender la red por batería/Doze; eso reduce disponibilidad, no habilita entregas sin mayoría.
 

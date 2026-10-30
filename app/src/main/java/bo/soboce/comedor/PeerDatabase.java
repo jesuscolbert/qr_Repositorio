@@ -9,7 +9,7 @@ import java.util.*;
 final class PeerDatabase extends SQLiteOpenHelper implements QuorumLog.Storage {
     final PeerConfig config;
     PeerDatabase(Context context, PeerConfig config) throws Exception {
-        super(context,"comedor-peers.db",null,1); this.config=config;
+        super(context,"comedor-peers.db",null,2); this.config=config;
         SQLiteDatabase db=getWritableDatabase();
         db.beginTransaction();
         try {
@@ -21,6 +21,13 @@ final class PeerDatabase extends SQLiteOpenHelper implements QuorumLog.Storage {
                 for(int i=0;i<people.length();i++) save("people",people.getJSONObject(i).getString("id"),people.getJSONObject(i));
             }
             PeerConfig.require(meta("node","").equals(Integer.toString(config.node)),"No se puede cambiar la identidad de esta base.");
+            if(!meta("projectionVersion","").equals("2")) {
+                // Rebuild derived views only; never discard promises, votes or the original log.
+                for(String table:new String[]{"people","meals","results"})db.delete(table,null,null);
+                JSONArray people=config.seed.getJSONArray("people");
+                for(int i=0;i<people.length();i++)save("people",people.getJSONObject(i).getString("id"),people.getJSONObject(i));
+                putMeta("applied","0");applyCommitted();putMeta("projectionVersion","2");
+            }
             db.setTransactionSuccessful();
         } finally { db.endTransaction(); }
     }
@@ -31,7 +38,11 @@ final class PeerDatabase extends SQLiteOpenHelper implements QuorumLog.Storage {
         db.execSQL("CREATE TABLE decisions(slot INTEGER PRIMARY KEY,ballot INTEGER NOT NULL,value TEXT NOT NULL,proof TEXT NOT NULL)");
         for(String name:new String[]{"people","meals","results"}) db.execSQL("CREATE TABLE "+name+"(id TEXT PRIMARY KEY,json TEXT NOT NULL)");
     }
-    @Override public void onUpgrade(SQLiteDatabase db,int old,int version){throw new IllegalStateException("Se requiere migración sin pérdida de datos.");}
+    @Override public void onUpgrade(SQLiteDatabase db,int old,int version){
+        if(old!=1||version!=2)throw new IllegalStateException("Se requiere migración sin pérdida de datos.");
+        // The constructor replays after SQLiteOpenHelper has finished opening the database.
+        db.execSQL("DELETE FROM meta WHERE k='projectionVersion'");
+    }
     String meta(String key,String fallback){try(Cursor c=getReadableDatabase().rawQuery("SELECT v FROM meta WHERE k=?",new String[]{key})){return c.moveToFirst()?c.getString(0):fallback;}}
     void putMeta(String key,String value){ContentValues cv=new ContentValues();cv.put("k",key);cv.put("v",value);getWritableDatabase().insertWithOnConflict("meta",null,cv,SQLiteDatabase.CONFLICT_REPLACE);}
     @Override public synchronized long nextBallot(int node,long floor){
@@ -82,16 +93,19 @@ final class PeerDatabase extends SQLiteOpenHelper implements QuorumLog.Storage {
             var old=state(d.slot());
             PeerConfig.require(old.value()==null||old.acceptedBallot()<d.ballot()||old.value().equals(d.value()),"Aceptación incompatible: detén y revisa este equipo.");
             state(d.slot(),Math.max(old.promised(),d.ballot()),Math.max(old.acceptedBallot(),d.ballot()),d.value());
-            long next=applied()+1;
-            while(true){
-                String value;
-                try(Cursor c=db.rawQuery("SELECT value FROM decisions WHERE slot=?",new String[]{Long.toString(next)})){if(!c.moveToFirst())break;value=c.getString(0);}
-                JSONObject command=config.command(value), req=command.getJSONObject("request");String id=req.getString("requestId");
-                if(get("results",id)==null)save("results",id,new MealLedger(this,config).execute(command).put("commandHash",PeerConfig.hash(value)));
-                putMeta("applied",Long.toString(next++));
-            }
+            applyCommitted();
             db.setTransactionSuccessful();
         }finally{db.endTransaction();}
+    }
+    private void applyCommitted() throws Exception {
+        long next=applied()+1;
+        while(true){
+            String value;
+            try(Cursor c=getReadableDatabase().rawQuery("SELECT value FROM decisions WHERE slot=?",new String[]{Long.toString(next)})){if(!c.moveToFirst())break;value=c.getString(0);}
+            JSONObject command=config.command(value),req=command.getJSONObject("request");String id=req.getString("requestId");
+            if(get("results",id)==null)save("results",id,new MealLedger(this,config).execute(command).put("commandHash",PeerConfig.hash(value)));
+            putMeta("applied",Long.toString(next++));
+        }
     }
     synchronized JSONArray history(long after,int limit) throws Exception {
         JSONArray result=new JSONArray();
