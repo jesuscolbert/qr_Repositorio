@@ -1,0 +1,22 @@
+plugins { id 'com.android.application' }
+android {
+ namespace 'bo.colbert.cobros'
+ compileSdk 35
+ defaultConfig { applicationId 'bo.colbert.cobros'; minSdk 26; targetSdk 35; versionCode 1; versionName '1.0.0'; testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner' }
+ packaging { jniLibs { useLegacyPackaging = true; keepDebugSymbols += ['**/libcloudflared.so'] } }
+ sourceSets.main.jniLibs.srcDirs = [rootProject.file('app/src/main/jniLibs')]
+ def signingFile=rootProject.file('private/signing.properties')
+ if(signingFile.exists()){
+  def props=new Properties();signingFile.withInputStream { props.load(it) }
+  signingConfigs { stable { storeFile rootProject.file('private/release.jks');storePassword props['storePassword'];keyAlias 'comedor';keyPassword props['keyPassword'] } }
+ }
+ buildTypes {
+  release { minifyEnabled false; if(signingFile.exists())signingConfig signingConfigs.stable }
+ }
+ compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}
+dependencies {
+ implementation project(':licensing')
+ androidTestImplementation 'androidx.test:runner:1.6.2'
+ androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+}

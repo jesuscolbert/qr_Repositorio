@@ -1,0 +1,12 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+ <uses-permission android:name="android.permission.INTERNET"/>
+ <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+ <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"/>
+ <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE"/>
+ <uses-permission android:name="android.permission.WAKE_LOCK"/>
+ <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+ <application android:label="Colbert · Cobros" android:icon="@drawable/ic_billing" android:theme="@style/BillingTheme" android:allowBackup="false" android:usesCleartextTraffic="false">
+  <activity android:name=".BillingActivity" android:exported="true"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter></activity>
+  <service android:name=".BillingService" android:exported="false" android:foregroundServiceType="connectedDevice"/>
+ </application>
+</manifest>

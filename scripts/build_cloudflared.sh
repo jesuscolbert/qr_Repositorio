@@ -12,6 +12,8 @@ go build -mod=readonly -trimpath -buildmode=pie \
   -ldflags='-s -w -X main.Version=2026.10.6 -X github.com/cloudflare/cloudflared/cmd/cloudflared/updater.BuiltForPackageManager=SOBOCE' \
   -o "$root/app/src/main/jniLibs/arm64-v8a/libcloudflared.so" ./cmd/cloudflared
 cp LICENSE "$root/app/src/main/assets/cloudflared-LICENSE.txt"
+mkdir -p "$root/billing/src/main/assets"
+cp LICENSE "$root/billing/src/main/assets/cloudflared-LICENSE.txt"
 file "$root/app/src/main/jniLibs/arm64-v8a/libcloudflared.so"
 sha256sum "$root/app/src/main/jniLibs/arm64-v8a/libcloudflared.so"
 export GOARCH=amd64 CC="$ndk/x86_64-linux-android26-clang"

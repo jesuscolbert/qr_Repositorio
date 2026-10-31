@@ -2,6 +2,12 @@
 
 Aplicación Android para encargados de comedor. Android 8 o posterior; teléfonos ARM64. Los usuarios presentan un QR físico o digital; no necesitan otra aplicación.
 
+## Licencias y cobros — 1.7.0
+
+SOBOCE incorpora el cliente de permisos de **Colbert Cobros**, administrado desde otra APK privada en el teléfono de Jesús Colbert. Un contrato cubre todos los equipos del mismo cliente y aplicación. El permiso dura hasta 24 horas desde su validación, sin superar el período pagado. Admite cobros diarios/mensuales, precio y QR de pago editables y comprobantes sujetos a aprobación manual. El contrato inicial no tiene cobro activado. Los registros se conservan y se pueden consultar/exportar durante la suspensión.
+
+Instalar primero el servidor de cobros y luego la actualización del comedor en todos los teléfonos. Mantener el servidor con internet; no puede recibir pagos ni emitir permisos mientras está apagado. Las versiones antiguas no tienen este control. Instrucciones, API, respaldo cifrado e integración de futuros programas en [licensing/README.md](licensing/README.md). La compilación continúa en GitHub; los instaladores privados no se publican allí.
+
 ## Diseño y atención continua — 1.6.0
 
 El menú usa tarjetas de colores para Desayuno, Almuerzo, Cena y Dieta. «Iniciar escaneo» abre una cámara continua: cada lectura registra directamente la comida y planta elegidas. Solo una respuesta de entrega guardada produce «ACCESO PERMITIDO» en verde, con marca de confirmación. Un duplicado o resultado recuperado muestra «YA REGISTRADO» en rojo, con aviso sonoro y vibración. No se afirma que la persona haya recibido físicamente dos raciones. El teléfono vuelve al lector después de 1,7 segundos en verde y 3,2 segundos ante un rechazo. Una tarjeta que permanece ante la cámara no genera lecturas nuevas continuamente: debe retirarse para volver a presentarla. Los avisos sonoros respetan la configuración de volumen del teléfono.

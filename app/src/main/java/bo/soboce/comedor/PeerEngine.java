@@ -11,6 +11,7 @@ import java.util.concurrent.*;
 class PeerEngine implements QuorumLog.Network, AutoCloseable {
     static final int PROTOCOL=3;
     final PeerConfig config;
+    final bo.colbert.licensing.LicenseClient license;
     final PeerDatabase db;
     final OfflineLedger offline;
     SharedNetwork shared;
@@ -25,7 +26,7 @@ class PeerEngine implements QuorumLog.Network, AutoCloseable {
     volatile boolean syncing;
     volatile String state="Registro local disponible. Buscando teléfonos para sincronizar…";
     PeerEngine(Context context,PeerConfig config) throws Exception {this(context,config,"comedor-peers.db");}
-    PeerEngine(Context context,PeerConfig config,String databaseName) throws Exception {this.config=config;db=new PeerDatabase(context,config,databaseName);offline=new OfflineLedger(db,config);shared=config.shared?new SharedNetwork(this):null;synchronized(db){String saved=db.meta("instance","");if(saved.isEmpty()){saved=UUID.randomUUID().toString();db.putMeta("instance",saved);}instance=saved;}}
+    PeerEngine(Context context,PeerConfig config,String databaseName) throws Exception {this.config=config;license=bo.colbert.licensing.LicenseClient.get(context);db=new PeerDatabase(context,config,databaseName);offline=new OfflineLedger(db,config);shared=config.shared?new SharedNetwork(this):null;synchronized(db){String saved=db.meta("instance","");if(saved.isEmpty()){saved=UUID.randomUUID().toString();db.putMeta("instance",saved);}instance=saved;}}
     void start() throws IOException {
         server=new ServerSocket();server.setReuseAddress(true);server.bind(new InetSocketAddress(InetAddress.getByName("127.0.0.1"),8787),16);
         Thread acceptor=new Thread(()->{
@@ -120,6 +121,7 @@ class PeerEngine implements QuorumLog.Network, AutoCloseable {
         }finally{syncing=false;}
     }
     JSONObject request(JSONObject original) throws Exception {
+        if(LicensingController.mutation(original)&&!license.allowed())return LicensingController.denied();
         String action=original.getString("action");
         if(PeerCards.local(action))return PeerCards.request(db,config,original,System.currentTimeMillis());
         if(!action.equals("scan"))throw new IllegalArgumentException("Los encargados se configuran al preparar la red.");

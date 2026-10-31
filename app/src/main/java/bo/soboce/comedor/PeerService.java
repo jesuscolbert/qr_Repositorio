@@ -41,6 +41,7 @@ public final class PeerService extends Service {
                 current.sync();
             }catch(Exception e){failure="El túnel no pudo conectarse. Comprueba internet.";}
         },2,5,TimeUnit.SECONDS);
+        leaseTasks.scheduleWithFixedDelay(()->{try{bo.colbert.licensing.LicenseClient l=bo.colbert.licensing.LicenseClient.get(this);if(l.configured()&&l.refreshDue())l.refresh();}catch(Exception ignored){}},1,60,TimeUnit.SECONDS);
         leaseTasks.scheduleWithFixedDelay(()->{PeerEngine e=engine;if(!stopped&&e!=null&&e.shared!=null)e.shared.coordinate();},0,5,TimeUnit.SECONDS);
         leaseTasks.scheduleWithFixedDelay(()->{
             synchronized(PeerService.this){

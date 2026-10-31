@@ -53,7 +53,7 @@ class SharedNetwork {
         PeerConfig.require(leading(),"Servidor relevado.");String method=r.getString("method");
         if(method.equals("status"))return status();
         PeerConfig.require(r.optInt("protocol")==5,"Actualiza todos los teléfonos a 1.6 para sincronizar Dieta.");
-        if(method.equals("scan"))return ledger.scan(r.getJSONObject("request"),r.getJSONObject("operator"),System.currentTimeMillis());
+        if(method.equals("scan")){if(!engine.license.allowed())return LicensingController.denied();return ledger.scan(r.getJSONObject("request"),r.getJSONObject("operator"),System.currentTimeMillis());}
         PeerConfig.require(method.equals("exchange"),"Método inválido.");
         String source=r.getString("device");PeerConfig.require(source.matches("[a-f0-9]{64}")&&!source.equals(config.device),"Instalación repetida.");
         synchronized(engine.db){
