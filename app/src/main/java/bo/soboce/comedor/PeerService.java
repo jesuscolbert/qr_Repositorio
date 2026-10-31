@@ -13,6 +13,7 @@ public final class PeerService extends Service {
     static volatile String failure="";
     static final TunnelHealth health=new TunnelHealth();
     private final ScheduledExecutorService tasks=Executors.newSingleThreadScheduledExecutor();
+    private final ScheduledExecutorService licenseTasks=Executors.newSingleThreadScheduledExecutor();
     private final ScheduledExecutorService leaseTasks=Executors.newScheduledThreadPool(2);
     private volatile Process tunnel;
     private PowerManager.WakeLock awake;
@@ -41,7 +42,7 @@ public final class PeerService extends Service {
                 current.sync();
             }catch(Exception e){failure="El túnel no pudo conectarse. Comprueba internet.";}
         },2,5,TimeUnit.SECONDS);
-        leaseTasks.scheduleWithFixedDelay(()->{try{bo.colbert.licensing.LicenseClient l=bo.colbert.licensing.LicenseClient.get(this);if(l.configured()&&l.refreshDue())l.refresh();}catch(Exception ignored){}},1,60,TimeUnit.SECONDS);
+        licenseTasks.scheduleWithFixedDelay(()->{try{bo.colbert.licensing.LicenseClient l=bo.colbert.licensing.LicenseClient.get(this);if(l.configured()&&l.refreshDue())l.refresh();}catch(Exception ignored){}},1,60,TimeUnit.SECONDS);
         leaseTasks.scheduleWithFixedDelay(()->{PeerEngine e=engine;if(!stopped&&e!=null&&e.shared!=null)e.shared.coordinate();},0,5,TimeUnit.SECONDS);
         leaseTasks.scheduleWithFixedDelay(()->{
             synchronized(PeerService.this){
@@ -67,5 +68,5 @@ public final class PeerService extends Service {
     }
     @Override public int onStartCommand(Intent intent,int flags,int id){return START_NOT_STICKY;}
     @Override public IBinder onBind(Intent intent){return null;}
-    @Override public synchronized void onDestroy(){stopped=true;tasks.shutdownNow();leaseTasks.shutdownNow();Process p=tunnel;if(p!=null)p.destroyForcibly();PeerEngine e=engine;engine=null;if(e!=null)e.close();if(awake!=null&&awake.isHeld())awake.release();super.onDestroy();}
+    @Override public synchronized void onDestroy(){stopped=true;tasks.shutdownNow();leaseTasks.shutdownNow();licenseTasks.shutdownNow();Process p=tunnel;if(p!=null)p.destroyForcibly();PeerEngine e=engine;engine=null;if(e!=null)e.close();if(awake!=null&&awake.isHeld())awake.release();super.onDestroy();}
 }

@@ -106,6 +106,9 @@ jobs:
             app/build/reports/ui/
             billing/build/reports/androidTests/
             licensing/build/reports/androidTests/
+            app/build/reports/lint-results-*
+            billing/build/reports/lint-results-*
+            licensing/build/reports/lint-results-*
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
@@ -116,4 +119,12 @@ jobs:
         with:
           name: Colbert-Cobros-servidor
           path: billing/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Colbert-Licencias-SDK
+          path: |
+            licensing/build/outputs/aar/*release.aar
+            licensing/desktop/colbert_license.py
+            licensing/README.md
           if-no-files-found: error
