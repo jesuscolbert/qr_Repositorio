@@ -8,7 +8,7 @@ def package(base, final, assets):
     unsigned=final.with_suffix('.unsigned.apk');aligned=final.with_suffix('.aligned.apk')
     with zipfile.ZipFile(base) as src,zipfile.ZipFile(unsigned,'w') as dst:
         assert not set(assets).intersection(src.namelist())
-        assert not any(n.endswith(('billing-server.json','license-client.json','comedor-shared.json','shared-live-test.json')) for n in src.namelist())
+        assert not any(n.endswith(('billing-server.json','license-client.json','comedor-shared.json','shared-live-test.json','billing-live-test.json')) for n in src.namelist())
         for entry in src.infolist():
             if re.match(r'^META-INF/(?:MANIFEST\.MF|[^/]+\.(?:SF|RSA|DSA|EC))$',entry.filename,re.I):continue
             dst.writestr(entry,src.read(entry.filename))

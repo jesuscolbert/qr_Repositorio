@@ -62,7 +62,7 @@ public final class LicenseClient {
  private JSONObject post(String route,JSONObject request)throws Exception {
   HttpURLConnection c=(HttpURLConnection)new URL(config.getString("url").replaceAll("/$","")+route).openConnection();c.setConnectTimeout(7000);c.setReadTimeout(12000);c.setInstanceFollowRedirects(false);c.setRequestMethod("POST");c.setDoOutput(true);c.setRequestProperty("Authorization","Bearer "+config.getString("token"));c.setRequestProperty("Content-Type","application/json");
   byte[] bytes=request.toString().getBytes(StandardCharsets.UTF_8);c.setFixedLengthStreamingMode(bytes.length);
-  try{try(OutputStream out=c.getOutputStream()){out.write(bytes);}if(c.getResponseCode()!=200)throw new IOException("Servidor de permisos no disponible (HTTP "+c.getResponseCode()+").");try(InputStream in=c.getInputStream()){return new JSONObject(new String(read(in,4*1024*1024),StandardCharsets.UTF_8));}}finally{c.disconnect();}
+  try{try(OutputStream out=c.getOutputStream()){out.write(bytes);}if(c.getResponseCode()!=200){String problem="Servidor de permisos no disponible (HTTP "+c.getResponseCode()+").";if(c.getResponseCode()==400||c.getResponseCode()==403||c.getResponseCode()==429)try(InputStream error=c.getErrorStream()){if(error!=null){String detail=new JSONObject(new String(read(error,4096),StandardCharsets.UTF_8)).optString("error");if(!detail.isEmpty()&&detail.length()<=500)problem=detail;}}catch(Exception ignored){}throw new IOException(problem);}try(InputStream in=c.getInputStream()){return new JSONObject(new String(read(in,4*1024*1024),StandardCharsets.UTF_8));}}finally{c.disconnect();}
  }
  public boolean showIfBlocked(android.app.Activity a){if(allowed())return false;a.startActivity(new Intent(a,LicenseActivity.class));return true;}
 }
