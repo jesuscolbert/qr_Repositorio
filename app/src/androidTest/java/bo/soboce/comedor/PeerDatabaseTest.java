@@ -17,6 +17,41 @@ import static org.junit.Assert.*;
 
 @RunWith(AndroidJUnit4.class)
 public class PeerDatabaseTest {
+    PeerConfig documentConfig() throws Exception {
+        JSONObject raw=new JSONObject(sharedConfig(0,"f".repeat(64)).raw.toString());
+        JSONObject seed=new JSONObject(raw.getString("seed"));
+        seed.getJSONArray("people").getJSONObject(0).put("id","FRIGOR-CI-0012345").put("sap","").put("documento","0012345").put("nombre","CI 0012345 · Nombre pendiente");
+        seed.put("ratesConfigured",false);
+        raw.put("seed",seed.toString());raw.put("manifest",new JSONObject(raw.getString("manifest")).put("seedHash",PeerConfig.hash(seed.toString())).toString());
+        return new PeerConfig(raw.toString());
+    }
+    @Test public void documentIdentityKeepsQrAndMealLimitAfterNameCompletionAndIsolatesCompanies() throws Exception {
+        PeerConfig c=documentConfig();long now=System.currentTimeMillis();context.deleteDatabase("document-test.db");
+        try(PeerDatabase local=new PeerDatabase(context,c,"document-test.db")){
+            JSONObject list=new MealLedger(local,c).read(new JSONObject().put("action","people").put("plant","Planta 0"));
+            JSONObject person=list.getJSONArray("people").getJSONObject(0);
+            assertEquals("0012345",person.getString("documento"));assertEquals("",person.getString("sap"));
+            assertTrue(PersonIdentity.matches(person,"0012345"));assertEquals("CI 0012345",PersonIdentity.label(person));
+            JSONObject issue=new JSONObject().put("action","issue").put("plant","Planta 0").put("personId",person.getString("id"));
+            JSONObject card=PeerCards.request(local,c,issue,now);assertTrue(card.getString("detail").startsWith("CI 0012345"));
+            String qr=card.getString("qr");SharedLedger ledger=new SharedLedger(local,c);
+            assertEquals("accepted",ledger.scan(sharedRequest(0,"dieta").put("qr",qr),c.operator(-1),now).getString("status"));
+            JSONObject saved=local.get("people",person.getString("id"));saved.put("nombre","Nombre completo de prueba");local.save("people",person.getString("id"),saved);
+            assertEquals("Nombre completo de prueba",PeerCards.resolve(local,c,qr,now).getString("nombre"));
+            String newQr=PeerCards.request(local,c,issue,now+1).getString("qr");
+            assertEquals("duplicate",ledger.scan(sharedRequest(0,"almuerzo").put("qr",newQr),c.operator(-1),now+1).getString("status"));
+            assertEquals(1,new OfflineLedger(local,c).records().size());
+            try{PeerCards.resolve(db,sharedConfig(0,"b".repeat(64)),qr,now);fail("Cross-company credential accepted");}catch(IllegalArgumentException expected){}
+            for(String document:new String[]{"0012345","CI 0012345","CI BO 0012345"}){
+                JSONObject visitor=visitorRequest("Planta 0",now).put("document",document);
+                assertFalse(PeerCards.request(local,c,visitor,now).getBoolean("ok"));
+            }
+            JSONObject report=new MealLedger(local,c).read(new JSONObject().put("action","report").put("plant","Planta 0").put("period","day").put("date",MealLedger.day(now)));
+            assertFalse(report.getBoolean("ratesConfigured"));assertEquals(1,report.getInt("unpriced"));
+            assertTrue(report.getJSONArray("items").getJSONObject(0).getBoolean("precioPendiente"));
+            String[] csvRow=report.getString("csv").split("\r\n")[1].split(",");assertEquals("\"\"",csvRow[7]);
+        }finally{context.deleteDatabase("document-test.db");}
+    }
     @Test public void billingLockPreservesUncertainScanAndOnlyRecoversExistingReceipts() throws Exception {
         PeerConfig c=sharedConfig(0,"b".repeat(64));long now=System.currentTimeMillis();context.deleteDatabase("billing-gate.db");
         try(PeerDatabase local=new PeerDatabase(context,c,"billing-gate.db")){

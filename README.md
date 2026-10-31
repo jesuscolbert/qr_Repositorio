@@ -1,5 +1,19 @@
 # SOBOCE Comedor
 
+## FRIGOR separado — 1.7.1
+
+La variante `frigor` instala **FRIGOR Comedor** (`bo.soboce.comedor.frigor`) junto a SOBOCE. Tiene datos y credenciales independientes y usa el puerto local 8788, evitando interferir con el receptor de SOBOCE (8787). Su red usa `https://frigor.colbertconsorcio.shop`, el túnel `frigor-comedor-compartido` y un Worker de coordinación exclusivo. No se modifican los servicios ni el padrón de SOBOCE.
+
+`scripts/import_frigor.py USUARIO.xlsx` valida el archivo suministrado, conserva los carnets como texto y genera un padrón privado con identidad estable `FRIGOR-CI-<carnet>`. El número interno del reloj es solo una referencia. Rechaza carnets duplicados y no fabrica nombres. Los nombres numéricos o ausentes se muestran como pendientes. Las longitudes poco habituales quedan señaladas para revisión; no se eliminan personas ni se presume que el carnet está verificado. El archivo no contiene plantillas de huellas.
+
+Las listas y tarjetas muestran CI o SAP según corresponda. Buscar por carnet no equivale a autorizar una comida: se sigue usando un QR autenticado. Reemitir tarjetas o completar el nombre de una identidad existente conserva el límite de comida de esa persona. Un trabajador con carnet conocido no puede recibir otro QR como visitante con el mismo documento. Las claves de red separadas impiden usar QR de una empresa en la otra.
+
+El libro privado de revisión permite completar nombres; editarlo no actualiza automáticamente los teléfonos. El padrón inicial forma parte del manifiesto de red: una futura actualización debe conservar ese manifiesto, los identificadores y el historial, no regenerar la red con otro seed.
+
+No se han suministrado tarifas de FRIGOR. Los registros quedan marcados con precio pendiente, el reporte muestra raciones y el CSV deja vacío el importe pendiente. No se copian las tarifas ni el contrato de licencia de SOBOCE. El módulo de cobros permanece disponible para integrarlo con un contrato propio; este instalador de FRIGOR no lo activa.
+
+Preparación: importar el archivo, ejecutar `scripts/provision_frigor.py`, desplegar `backend/coordination/wrangler.frigor.jsonc`, configurar su secreto `NETWORK_KEY` desde el paquete privado y completar `--coordinator`. GitHub compila y valida `:app:assembleFrigor`. `scripts/package_frigor.py APK-DE-GITHUB` incorpora únicamente los datos privados de FRIGOR y firma la APK, sin compilar localmente. No publicar la APK privada ni el Excel. Los tests solo usan datos sintéticos; el secreto temporal `FRIGOR_SHARED_TEST_CONFIG_B64` se elimina al terminar la validación inicial de su nueva conexión.
+
 Aplicación Android para encargados de comedor. Android 8 o posterior; teléfonos ARM64. Los usuarios presentan un QR físico o digital; no necesitan otra aplicación.
 
 ## Licencias y cobros — 1.7.0

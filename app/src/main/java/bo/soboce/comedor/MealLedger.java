@@ -34,11 +34,11 @@ final class MealLedger {
         String plant=r.optString("plant");boolean known=false;for(int i=0;i<plants.length();i++)known|=plants.getString(i).equals(plant);
         PeerConfig.require(all||known&&(admin||op.getString("plant").equals(plant)),"No tienes permiso para esta planta.");
         if(action.equals("people")){
-            JSONArray people=new JSONArray();for(JSONObject p:db.rows("people"))if(p.optBoolean("activo")&&p.getString("planta").equals(plant))people.put(new JSONObject().put("id",p.getString("id")).put("sap",p.optString("sap")).put("nombre",p.getString("nombre")).put("planta",plant).put("tipo",p.getString("tipo")));
+            JSONArray people=new JSONArray();for(JSONObject p:db.rows("people"))if(p.optBoolean("activo")&&p.getString("planta").equals(plant))people.put(new JSONObject().put("id",p.getString("id")).put("sap",p.optString("sap")).put("documento",p.optString("documento")).put("nombre",p.getString("nombre")).put("planta",plant).put("tipo",p.getString("tipo")));
             return ok().put("people",people);
         }
         if(action.equals("today")||action.equals("report")||action.equals("conflicts")){
-            return MealReports.build(new OfflineLedger(db,config).records(),r,today,all).put("synced",db.applied()).put("pending",config.shared?new SharedLedger(db,config).pending():new OfflineLedger(db,config).pending());
+            return MealReports.build(new OfflineLedger(db,config).records(),r,today,all).put("ratesConfigured",config.seed.optBoolean("ratesConfigured",true)).put("synced",db.applied()).put("pending",config.shared?new SharedLedger(db,config).pending():new OfflineLedger(db,config).pending());
         }
 
         if(action.equals("scan")){
@@ -51,11 +51,12 @@ final class MealLedger {
             PeerConfig.require(admin,"Solo administración puede emitir QR de trabajadores.");JSONObject p=db.get("people",r.optString("personId"));
             PeerConfig.require(p!=null&&p.optBoolean("activo")&&p.getString("planta").equals(plant),"Persona no encontrada.");
             String qr=r.getString("newQr");p.put("qrHash",PeerConfig.hash(qr));db.save("people",p.getString("id"),p);
-            return ok().put("qr",qr).put("person",p.getString("nombre")).put("detail","SAP "+p.optString("sap")+" · "+plant);
+            return ok().put("qr",qr).put("person",p.getString("nombre")).put("detail",PersonIdentity.label(p)+" · "+plant);
         }
         if(action.equals("visitor")){
             String name=r.optString("name").trim(),document=r.optString("document").toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9]",""),cost=r.optString("costCenter").trim(),expires=r.optString("expires");
             PeerConfig.require(name.length()>=3&&name.length()<=100&&document.length()>=5&&document.length()<=60&&!cost.isEmpty()&&cost.length()<=50,"Completa nombre, documento y centro de costo.");
+            PersonIdentity.requireNewVisitor(db.rows("people"),document);
             LocalDate end;try{end=LocalDate.parse(expires);}catch(Exception e){throw new IllegalArgumentException("Fecha inválida.");}
             LocalDate start=LocalDate.parse(today);PeerConfig.require(!end.isBefore(start)&&!end.isAfter(start.plusDays(30)),"La visita puede durar de hoy hasta 30 días.");
             List<String> meals=Arrays.asList(r.optString("meals").split(","));PeerConfig.require(!meals.isEmpty()&&MEALS.containsAll(meals),"Selecciona comidas válidas.");
@@ -89,6 +90,7 @@ final class MealLedger {
             PeerConfig.require(rate!=null&&Double.isFinite(rate.optDouble(Meals.allowance(meal)))&&rate.optDouble(Meals.allowance(meal))>=0,"Falta una tarifa válida.");
             String time=time(when);
             JSONObject record=new JSONObject().put("clave",key).put("solicitud",r.getString("requestId")).put("persona",p.getString("id")).put("nombre",p.getString("nombre")).put("fecha",today).put("comida",meal).put("planta",plant).put("operador",op.getString("name")).put("hora",time).put("precio",rate.getDouble(Meals.allowance(meal))).put("centroCosto",p.optString("centroCosto")).put("qrHash",hash);
+            if(!config.seed.optBoolean("ratesConfigured",true))record.put("precioPendiente",true);
             return record;
     }
 }

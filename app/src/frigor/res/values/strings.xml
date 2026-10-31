@@ -1,0 +1,5 @@
+<resources>
+ <string name="app_name">FRIGOR Comedor</string>
+ <string name="organization_name">FRIGOR</string>
+ <integer name="peer_port">8788</integer>
+</resources>

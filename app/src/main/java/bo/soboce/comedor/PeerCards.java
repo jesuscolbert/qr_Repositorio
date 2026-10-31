@@ -32,10 +32,11 @@ final class PeerCards {
         if(r.getString("action").equals("issue")) {
             JSONObject p=db.get("people",r.optString("personId"));
             PeerConfig.require(p!=null&&p.optBoolean("activo")&&p.optString("planta").equals(plant)&&!p.optString("tipo").equals("VISITA"),"Trabajador activo no encontrado en esta planta.");
-            body.put("kind","employee").put("id",p.getString("id"));name=p.getString("nombre");detail="SAP "+p.optString("sap")+" · "+plant;
+            body.put("kind","employee").put("id",p.getString("id"));name=p.getString("nombre");detail=PersonIdentity.label(p)+" · "+plant;
         } else {
             name=r.optString("name").trim();String document=r.optString("document").toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9]",""),cost=r.optString("costCenter").trim(),expires=r.optString("expires"),meals=r.optString("meals");
             PeerConfig.require(name.length()>=3&&name.length()<=100&&document.length()>=5&&document.length()<=60&&!cost.isEmpty()&&cost.length()<=50,"Completa nombre, documento y centro de costo.");
+            PersonIdentity.requireNewVisitor(db.rows("people"),document);
             visitorDates(expires,now);validMeals(meals);
             body.put("kind","visitor").put("id","VIS-"+PeerConfig.hash(document)).put("name",name).put("cost",cost).put("expires",expires).put("meals",meals);
             detail="Visita · "+plant+" · hasta "+expires;

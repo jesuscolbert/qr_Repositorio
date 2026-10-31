@@ -1,0 +1,5 @@
+<resources>
+ <string name="app_name">SOBOCE Comedor</string>
+ <string name="organization_name">SOBOCE</string>
+ <integer name="peer_port">8787</integer>
+</resources>

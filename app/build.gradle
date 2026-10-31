@@ -2,7 +2,7 @@ plugins { id 'com.android.application' }
 android {
  namespace 'bo.soboce.comedor'
  compileSdk 35
- defaultConfig { applicationId 'bo.soboce.comedor'; minSdk 26; targetSdk 35; versionCode 8; versionName '1.7.0' }
+ defaultConfig { applicationId 'bo.soboce.comedor'; minSdk 26; targetSdk 35; versionCode 9; versionName '1.7.1' }
  defaultConfig { testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner' }
  packaging { jniLibs { useLegacyPackaging = true; keepDebugSymbols += ['**/libcloudflared.so'] } }
  def signingFile = rootProject.file('private/signing.properties')
@@ -13,6 +13,7 @@ android {
  buildTypes {
   release { minifyEnabled true; shrinkResources true; proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro' }
   pilot { initWith release; signingConfig signingFile.exists() ? signingConfigs.localRelease : signingConfigs.debug; applicationIdSuffix '.piloto'; versionNameSuffix '-piloto'; matchingFallbacks = ['release'] }
+  frigor { initWith release; signingConfig signingFile.exists() ? signingConfigs.localRelease : signingConfigs.debug; applicationIdSuffix '.frigor'; versionNameSuffix '-frigor'; matchingFallbacks = ['release'] }
  }
  if (signingFile.exists()) buildTypes.release.signingConfig = signingConfigs.localRelease
  compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }

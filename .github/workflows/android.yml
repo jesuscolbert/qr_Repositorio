@@ -53,8 +53,9 @@ jobs:
       - run: node --test tests/backend.test.cjs tests/lease.test.mjs
       - name: Probar cliente de licencias para escritorio
         run: |
-          python3 -m pip install cryptography
+          python3 -m pip install cryptography openpyxl
           python3 -m unittest discover -s tests -p test_desktop_license.py -v
+          python3 -m unittest discover -s tests -p test_frigor_roster.py -v
       - name: Probar decisiones entre cuatro teléfonos
         run: |
           mkdir -p .tools/quorum-tests
@@ -62,7 +63,7 @@ jobs:
           java -cp .tools/quorum-tests bo.soboce.comedor.QuorumLogTest
       - name: Compilar conector de túnel para Android
         run: bash scripts/build_cloudflared.sh
-      - run: gradle :app:assemblePilot :app:lintPilot :billing:assembleRelease :billing:lintRelease :licensing:assembleRelease :licensing:lintRelease --console=plain
+      - run: gradle :app:assemblePilot :app:lintPilot :app:assembleFrigor :app:lintFrigor :billing:assembleRelease :billing:lintRelease :licensing:assembleRelease :licensing:lintRelease --console=plain
       - name: Habilitar emulador
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -72,10 +73,11 @@ jobs:
         if: github.event_name != 'pull_request'
         env:
           SHARED_TEST_B64: ${{ secrets.SOBOCE_SHARED_TEST_CONFIG_B64 }}
+          FRIGOR_TEST_B64: ${{ secrets.FRIGOR_SHARED_TEST_CONFIG_B64 }}
         run: |
           python3 - <<'PY'
           import base64, os, pathlib
-          value = os.environ.get('SHARED_TEST_B64', '')
+          value = os.environ.get('FRIGOR_TEST_B64', '') or os.environ.get('SHARED_TEST_B64', '')
           if value:
               target = pathlib.Path('app/src/androidTest/assets/shared-live-test.json')
               target.parent.mkdir(parents=True, exist_ok=True)
@@ -106,6 +108,8 @@ jobs:
             gradle :billing:connectedDebugAndroidTest :licensing:connectedDebugAndroidTest --console=plain || { adb pull /sdcard/Download/colbert-billing-design app/build/reports/ui/; exit 1; }
             adb install -r app/build/outputs/apk/pilot/app-pilot.apk
             adb shell am start -W -n bo.soboce.comedor.piloto/bo.soboce.comedor.MainActivity
+            adb install -r app/build/outputs/apk/frigor/app-frigor.apk
+            adb shell am start -W -n bo.soboce.comedor.frigor/bo.soboce.comedor.MainActivity
             mkdir -p app/build/reports/ui
             adb exec-out screencap -p > app/build/reports/ui/conexion.png
             adb pull /sdcard/Download/soboce-design app/build/reports/ui/
@@ -127,6 +131,11 @@ jobs:
         with:
           name: SOBOCE-Comedor-prueba
           path: app/build/outputs/apk/pilot/*.apk
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FRIGOR-Comedor-prueba
+          path: app/build/outputs/apk/frigor/*.apk
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:

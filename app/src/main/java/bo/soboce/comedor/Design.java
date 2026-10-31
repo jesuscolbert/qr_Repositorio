@@ -29,7 +29,7 @@ final class Design {
     static View reportMeal(Context c,String meal,int count,double amount){
         LinearLayout box=card(c,mealTint(meal),14);LinearLayout top=row(c);top.addView(new Icon(c,meal,mealColor(meal)),new LinearLayout.LayoutParams(dp(c,22),dp(c,22)));TextView name=text(c,Meals.title(meal),13,mealColor(meal),true);name.setPadding(dp(c,7),0,0,0);top.addView(name);box.addView(top);space(box,10);box.addView(text(c,Integer.toString(count),28,INK,true));space(box,5);box.addView(text(c,money(amount),12,MUTED,false));return box;
     }
-    static String money(double value){return String.format(new java.util.Locale("es","BO"),"Bs %,.2f",value);}
+    static String money(double value){return Double.isNaN(value)?"Tarifa pendiente":String.format(new java.util.Locale("es","BO"),"Bs %,.2f",value);}
     static void grid(LinearLayout parent,View... views){Context c=parent.getContext();for(int i=0;i<views.length;i+=2){LinearLayout line=row(c);for(int j=i;j<Math.min(i+2,views.length);j++){LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-1,1);lp.setMargins(j==i?0:dp(c,6),0,j==i?dp(c,6):0,0);line.addView(views[j],lp);}LinearLayout.LayoutParams row=new LinearLayout.LayoutParams(-1,-2);row.bottomMargin=dp(c,12);parent.addView(line,row);}}
     static final class Icon extends View {
         final String name;final int color;final Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);
