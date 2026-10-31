@@ -81,6 +81,19 @@ jobs:
               target.parent.mkdir(parents=True, exist_ok=True)
               target.write_bytes(base64.b64decode(value, validate=True))
           PY
+      - name: Preparar validación inicial del nuevo túnel de cobros
+        if: github.event_name != 'pull_request'
+        env:
+          BILLING_TEST_B64: ${{ secrets.COLBERT_BILLING_LIVE_TEST_B64 }}
+        run: |
+          python3 - <<'PY'
+          import base64, os, pathlib
+          value = os.environ.get('BILLING_TEST_B64', '')
+          if value:
+              target = pathlib.Path('billing/src/androidTest/assets/billing-live-test.json')
+              target.parent.mkdir(parents=True, exist_ok=True)
+              target.write_bytes(base64.b64decode(value, validate=True))
+          PY
       - uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
