@@ -13,5 +13,6 @@ final class LicensingController {
  void pause(){resumed=false;ui.removeCallbacks(tick);}
  void close(){pause();worker.shutdown();}
  static boolean mutation(JSONObject request){String action=request.optString("action");return action.equals("scan")||action.equals("issue")||action.equals("visitor")||action.equals("operator");}
- static JSONObject denied()throws JSONException{return new JSONObject().put("ok",false).put("definitive",true).put("error","Licencia pausada. Abre Licencia y pagos para renovar el permiso.");}
+ static JSONObject denied()throws JSONException{return new JSONObject().put("ok",false).put("definitive",false).put("error","Licencia pausada. Conserva la entrega pendiente y abre Licencia y pagos para renovar el permiso.");}
+ static JSONObject deniedNew()throws JSONException{return new JSONObject().put("ok",false).put("definitive",true).put("error","Licencia pausada. Esta solicitud no registró una entrega nueva. Renueva el permiso de la aplicación.");}
 }

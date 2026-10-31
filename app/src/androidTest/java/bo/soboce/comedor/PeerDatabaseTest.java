@@ -17,6 +17,19 @@ import static org.junit.Assert.*;
 
 @RunWith(AndroidJUnit4.class)
 public class PeerDatabaseTest {
+    @Test public void billingLockPreservesUncertainScanAndOnlyRecoversExistingReceipts() throws Exception {
+        PeerConfig c=sharedConfig(0,"b".repeat(64));long now=System.currentTimeMillis();context.deleteDatabase("billing-gate.db");
+        try(PeerDatabase local=new PeerDatabase(context,c,"billing-gate.db")){
+            SharedLedger ledger=new SharedLedger(local,c);JSONObject previous=sharedRequest(0,"almuerzo");
+            assertEquals("accepted",ledger.scan(previous,c.operator(-1),now,true).getString("status"));
+            assertEquals("recovered",ledger.scan(previous,c.operator(-1),now,false).getString("status"));
+            JSONObject fresh=sharedRequest(0,"cena"),denied=ledger.scan(fresh,c.operator(-1),now,false);
+            assertFalse(denied.getBoolean("ok"));assertTrue(denied.getBoolean("definitive"));assertEquals(1,new OfflineLedger(local,c).records().size());
+            assertEquals(ScanFeedback.Kind.PENDING,ScanFeedback.kind(LicensingController.denied()));
+            assertEquals("accepted",ledger.scan(fresh,c.operator(-1),now,true).getString("status"));
+            assertEquals(2,new OfflineLedger(local,c).records().size());
+        }finally{context.deleteDatabase("billing-gate.db");}
+    }
     @Test public void dietReplacesLunchAcrossPhonesAndPreservesItsReportLabel() throws Exception {
         PeerConfig a=sharedConfig(0,"b".repeat(64)),b=sharedConfig(1,"c".repeat(64));long now=System.currentTimeMillis();
         context.deleteDatabase("diet-a.db");context.deleteDatabase("diet-b.db");

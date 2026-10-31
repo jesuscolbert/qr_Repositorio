@@ -15,7 +15,8 @@ final class SharedLedger {
         sql.execSQL("CREATE INDEX IF NOT EXISTS shared_meal_key ON shared_events(meal_key)");
         sql.execSQL("CREATE TABLE IF NOT EXISTS shared_results(id TEXT PRIMARY KEY,json TEXT NOT NULL)");
     }
-    JSONObject scan(JSONObject request,JSONObject operator,long now) throws Exception {synchronized(db){
+    JSONObject scan(JSONObject request,JSONObject operator,long now) throws Exception {return scan(request,operator,now,true);}
+    JSONObject scan(JSONObject request,JSONObject operator,long now,boolean allowNew) throws Exception {synchronized(db){
         SQLiteDatabase sql=db.getWritableDatabase();sql.beginTransaction();
         try{
             PeerConfig.require(request.optString("action").equals("scan")&&request.optString("requestId").matches("[a-f0-9-]{36}"),"Solicitud inválida.");
@@ -26,6 +27,7 @@ final class SharedLedger {
             try(Cursor c=sql.rawQuery("SELECT value FROM offline_events WHERE request_id=?",new String[]{id})){
                 if(c.moveToFirst()){JSONObject b=config.command(c.getString(0));PeerConfig.require(OfflineLedger.sameRequest(b.getJSONObject("request"),request),"Solicitud incompatible.");return recovered(accepted(b.getJSONObject("record")));}
             }
+            if(!allowNew)return LicensingController.deniedNew();
             long last=Long.parseLong(db.meta("lastSharedTime","0"));
             if(now<=0||now<last-60000)return new JSONObject().put("ok",false).put("definitive",false).put("error","Activa fecha y hora automáticas: el reloj retrocedió.");
             JSONObject reply;

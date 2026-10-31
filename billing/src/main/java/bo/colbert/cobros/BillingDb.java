@@ -23,6 +23,7 @@ public final class BillingDb extends SQLiteOpenHelper {
  private void audit(String action,String subject,long now){ContentValues v=new ContentValues();v.put("time",now);v.put("action",action);v.put("subject",subject);getWritableDatabase().insertOrThrow("audit",null,v);}
  public synchronized JSONObject contract(String id)throws Exception{JSONObject c=get("contract",id);LicenseProtocol.require(c!=null,"Cliente no encontrado.");return c;}
  public synchronized JSONArray contracts()throws Exception{return list("contract");}
+ public synchronized boolean empty(){return android.database.DatabaseUtils.queryNumEntries(getReadableDatabase(),"items","kind=?",new String[]{"contract"})==0;}
  public static void id(String id){LicenseProtocol.require(id.matches("[a-zA-Z0-9_-]{1,80}"),"Identificador inválido.");}
  public void create(String id,String customer,String product,String productName,String token,long now)throws Exception{tx(()->{
   id(id);id(product);LicenseProtocol.require(customer.trim().length()>=2&&customer.length()<=120&&productName.length()<=120&&token.matches("[a-f0-9]{64}"),"Revisa cliente, producto y clave.");
