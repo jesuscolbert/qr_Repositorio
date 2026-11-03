@@ -166,7 +166,7 @@ public class PeerDatabaseTest {
     android.view.View findText(android.view.View v,String text){if(v instanceof android.widget.TextView&&text.contentEquals(((android.widget.TextView)v).getText()))return v;if(v instanceof android.view.ViewGroup){android.view.ViewGroup g=(android.view.ViewGroup)v;for(int i=0;i<g.getChildCount();i++){android.view.View found=findText(g.getChildAt(i),text);if(found!=null)return found;}}return null;}
     void waitText(MainActivity a,String text) throws Exception {long end=System.currentTimeMillis()+15000;java.util.concurrent.atomic.AtomicBoolean found=new java.util.concurrent.atomic.AtomicBoolean();while(System.currentTimeMillis()<end){InstrumentationRegistry.getInstrumentation().runOnMainSync(()->found.set(containsText(a.getWindow().getDecorView(),text)));if(found.get())return;Thread.sleep(70);}fail("UI text not found: "+text);}
     void shellUi(String command) throws Exception {try(android.os.ParcelFileDescriptor fd=InstrumentationRegistry.getInstrumentation().getUiAutomation().executeShellCommand(command);InputStream in=new android.os.ParcelFileDescriptor.AutoCloseInputStream(fd)){in.readAllBytes();}}
-    void screenshot(String name) throws Exception {shellUi("mkdir -p /sdcard/Download/soboce-design");shellUi("screencap -p /sdcard/Download/soboce-design/"+name+".png");}
+    void screenshot(String name) throws Exception {InstrumentationRegistry.getInstrumentation().waitForIdleSync();Thread.sleep(250);shellUi("mkdir -p /sdcard/Download/soboce-design");shellUi("screencap -p /sdcard/Download/soboce-design/"+name+".png");}
     @Test public void redesignedScreensShowActualSavedScanAndDailyTotals() throws Exception {
         Vault vault=new Vault(context);clearSetupVault(vault);vault.remove("needsProfile");
         PeerConfig uiConfig=new PeerConfig(new JSONObject(sharedConfig(0,"d".repeat(64)).raw.toString()).put("node",0).toString());vault.put("peerConfig",uiConfig.raw.toString());vault.put("mode","p2p");
@@ -174,6 +174,10 @@ public class PeerDatabaseTest {
         MainActivity activity=(MainActivity)InstrumentationRegistry.getInstrumentation().startActivitySync(new android.content.Intent(context,MainActivity.class).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));
         try{
             waitText(activity,"INICIAR ESCANEO");screenshot("01-inicio");
+            int[] menuBefore=new int[2],scanBefore=new int[2];
+            InstrumentationRegistry.getInstrumentation().runOnMainSync(()->{findDescription(activity.getWindow().getDecorView(),"Abrir menú de navegación").getLocationOnScreen(menuBefore);findText(activity.getWindow().getDecorView(),"INICIAR ESCANEO  →").getLocationOnScreen(scanBefore);((android.widget.ScrollView)activity.page.getParent()).scrollTo(0,10000);});
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            InstrumentationRegistry.getInstrumentation().runOnMainSync(()->{int[] menuAfter=new int[2],scanAfter=new int[2];findDescription(activity.getWindow().getDecorView(),"Abrir menú de navegación").getLocationOnScreen(menuAfter);findText(activity.getWindow().getDecorView(),"INICIAR ESCANEO  →").getLocationOnScreen(scanAfter);assertArrayEquals(menuBefore,menuAfter);assertArrayEquals(scanBefore,scanAfter);});
             InstrumentationRegistry.getInstrumentation().runOnMainSync(activity::openScanner);Thread.sleep(600);
             String qr="SB1:"+"a".repeat(64);InstrumentationRegistry.getInstrumentation().runOnMainSync(()->activity.scanner.onCode(qr));waitText(activity,"ACCESO PERMITIDO");screenshot("02-acceso-permitido");
             assertTrue(vault.get("pending").isEmpty());Thread.sleep(2000);InstrumentationRegistry.getInstrumentation().runOnMainSync(()->activity.scanner.onCode(qr));waitText(activity,"YA REGISTRADO");screenshot("03-duplicado");

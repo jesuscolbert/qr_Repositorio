@@ -2,6 +2,8 @@
 
 Servicio de permisos administrado desde un teléfono Android dedicado. Un contrato representa **cliente + aplicación**: un pago habilita todos sus teléfonos o computadoras. Cada producto integra el cliente de licencias; no se puede controlar automáticamente software que aún no lo incorpora.
 
+FRIGOR 1.8 usa un contrato independiente. Colbert Cobros 1.1 incorpora ese contrato al abrir la actualización sin reemplazar los contratos anteriores, la clave de firma, los precios ni pagos existentes. Instalar encima de las versiones anteriores y tocar **Encender servidor** en el teléfono del propietario antes de la primera validación de FRIGOR. Actualizar todos los teléfonos FRIGOR: 1.7.1 no incorporaba el control de licencias.
+
 ## Instalación
 
 - `billing/`: app privada **Colbert · Cobros**, paquete `bo.colbert.cobros`. Su servidor, SQLite, firma de permisos y comprobantes viven en el teléfono del administrador.
@@ -58,6 +60,8 @@ No aceptar `allowed` sin verificar firma, contrato, producto, nonce, identidad f
 ### Android
 
 Integrar `implementation project(':licensing')`, incluir `assets/license-client.json` en el instalador privado y llamar a `LicenseClient.get(context).refresh()` en un hilo de trabajo. Antes de cada operación protegida verificar `allowed()`. Si está bloqueada, abrir `LicenseActivity`. Mantener validaciones periódicas mientras la app se usa. La biblioteca por sí sola no intercepta automáticamente las funciones de otra app.
+
+En los recursos del producto definir `colbert_license_required=true` y `colbert_license_product` con su `productId`. Así la falta de configuración o la configuración de otra aplicación bloquean el uso protegido. Las variantes de producción del comedor lo exigen; únicamente el target `debug` de pruebas sintéticas lo desactiva y no se distribuye.
 
 ### Python de escritorio
 

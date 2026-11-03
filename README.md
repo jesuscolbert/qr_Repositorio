@@ -2,7 +2,7 @@
 
 ## Menú, altas y permisos FRIGOR — 1.8.0
 
-El botón **Menú** queda fijo en la parte superior y abre un panel lateral. Inicio conserva la comida seleccionada, el lector y el acceso al reporte diario. Trabajadores, visitantes, reportes, red, pagos y ajustes se abren desde el panel.
+El botón **Menú** queda fijo en la parte superior y abre un panel lateral. **Iniciar escaneo** permanece visible abajo en Inicio, incluso al desplazar el contenido en una pantalla pequeña. Inicio conserva la comida seleccionada y el acceso al reporte diario. Trabajadores, visitantes, reportes, red, pagos y ajustes se abren desde el panel.
 
 **Nuevo trabajador** pide carnet y nombre opcional. Conserva los ceros iniciales y admite complemento con guion. Si ya existe, devuelve su credencial sin sustituir la identidad ni el historial. Las altas se firman como tarjetas `SB4` y se replican en un registro independiente del padrón inicial. El QR puede incorporar al trabajador en otro teléfono actualizado antes de la sincronización. El documento estable mantiene el límite de comida; las altas simultáneas del mismo carnet convergen en una sola persona y se señalan para revisar el nombre. Esto no verifica que un documento declarado sea auténtico.
 
