@@ -10,6 +10,15 @@ import java.util.Base64;
 
 @RunWith(AndroidJUnit4.class)
 public class LicenseTest {
+ @Test public void requiredProductsFailClosedWithoutConfigurationOrWithAnotherProduct()throws Exception{
+  android.content.Context c=androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().getTargetContext();SecretStore vault=new SecretStore(c);String previous=vault.get("clientConfig");
+  try{
+   vault.put("clientConfig","");LicenseClient missing=new LicenseClient(c,true,"frigor-comedor");assertTrue(missing.configured());assertFalse(missing.allowed());
+   vault.put("clientConfig",new JSONObject().put("version",1).put("url","https://example.com").put("contractId","customer").put("productId","soboce-comedor").put("token",LicenseProtocol.random()).toString());
+   LicenseClient other=new LicenseClient(c,true,"frigor-comedor");assertTrue(other.configured());assertFalse(other.allowed());
+   vault.put("clientConfig","broken");assertFalse(new LicenseClient(c,true,"frigor-comedor").allowed());
+  }finally{vault.put("clientConfig",previous);}
+ }
  KeyPair key;String pub,nonce;JSONObject claims;long now=1793462400000L;
  @Before public void setup()throws Exception{KeyPairGenerator g=KeyPairGenerator.getInstance("EC");g.initialize(new ECGenParameterSpec("secp256r1"));key=g.generateKeyPair();pub=Base64.getEncoder().encodeToString(key.getPublic().getEncoded());nonce=LicenseProtocol.random();claims=new JSONObject().put("version",1).put("contractId","customer").put("productId","product").put("nonce",nonce).put("issuedAt",now).put("expiresAt",now+LicenseProtocol.OFFLINE_MS).put("paidUntil",now+7*LicenseProtocol.OFFLINE_MS).put("allowed",true);}
  JSONObject signed()throws Exception{return LicenseProtocol.sign(claims,key.getPrivate(),key.getPublic());}

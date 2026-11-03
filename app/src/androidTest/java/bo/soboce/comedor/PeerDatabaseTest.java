@@ -17,6 +17,62 @@ import static org.junit.Assert.*;
 
 @RunWith(AndroidJUnit4.class)
 public class PeerDatabaseTest {
+    JSONObject enrollmentRequest(String ci,String name)throws Exception{return new JSONObject().put("action","worker").put("document",ci).put("name",name).put("plant","Planta 0");}
+    @Test public void workersRegisterAloneAndPortableCardsReplicateWithoutSkippingMissingRegistrations()throws Exception{
+        PeerConfig a=sharedConfig(0,"b".repeat(64)),b=sharedConfig(0,"c".repeat(64));long now=System.currentTimeMillis();
+        for(String f:new String[]{"roster-a.db","roster-b.db","roster-c.db"})context.deleteDatabase(f);
+        try(PeerDatabase ad=new PeerDatabase(context,a,"roster-a.db");PeerDatabase bd=new PeerDatabase(context,b,"roster-b.db");PeerDatabase cd=new PeerDatabase(context,b,"roster-c.db")){
+            RosterLedger al=new RosterLedger(ad,a),bl=new RosterLedger(bd,b),cl=new RosterLedger(cd,b);
+            JSONObject first=PeerCards.request(ad,a,enrollmentRequest("0012345","Trabajador uno"),now),second=PeerCards.request(ad,a,enrollmentRequest("0098765",""),now);
+            String qr=second.getString("qr");assertTrue(RosterLedger.format(qr));assertTrue(qr.length()<2048);
+            new com.google.zxing.MultiFormatWriter().encode(qr,com.google.zxing.BarcodeFormat.QR_CODE,700,700);
+            assertEquals("accepted",new SharedLedger(bd,b).scan(sharedRequest(0,"almuerzo").put("qr",qr),b.operator(-1),now).getString("status"));
+            assertEquals("0098765",bd.get("people","CI-0098765").getString("documento"));assertNull(bd.get("people","CI-0012345"));
+            assertEquals("[2,2]",bl.vector().getJSONArray(a.device).toString());cl.merge(bl.events(cl.vector(),20));assertNotNull(cd.get("people","CI-0098765"));
+            bl.merge(al.events(bl.vector(),20));assertEquals("[1,2]",bl.vector().getJSONArray(a.device).toString());assertNotNull(bd.get("people","CI-0012345"));
+            assertEquals(0,al.events(bl.vector(),20).length());cl.merge(bl.events(cl.vector(),20));assertEquals(0,bl.events(cl.vector(),20).length());
+            JSONObject repeated=PeerCards.request(ad,a,enrollmentRequest("0012345","Nombre distinto"),now);assertTrue(repeated.getBoolean("alreadyExists"));assertEquals(first.getString("qr"),repeated.getString("qr"));assertEquals(3,ad.rows("people").size());
+            assertEquals("duplicate",new SharedLedger(bd,b).scan(sharedRequest(0,"dieta").put("qr",qr),b.operator(-1),now).getString("status"));
+            String corrupted=qr.substring(0,qr.length()-1)+(qr.endsWith("a")?"b":"a");try{bl.accept(corrupted,now);fail("Altered enrollment accepted");}catch(IllegalArgumentException expected){}
+            PeerConfig other=new PeerConfig(new JSONObject(b.raw.toString()).put("networkKey","9".repeat(64)).toString());try{new RosterLedger(bd,other).accept(qr,now);fail("Other network accepted");}catch(IllegalArgumentException expected){}
+            assertEquals(3,bd.rows("people").size());
+        }finally{for(String f:new String[]{"roster-a.db","roster-b.db","roster-c.db"})context.deleteDatabase(f);}
+    }
+    @Test public void concurrentWorkerRegistrationsConvergeOnOneIdentityAndPreserveMealsDuringUpgrade()throws Exception{
+        PeerConfig a=sharedConfig(0,"b".repeat(64)),b=sharedConfig(0,"c".repeat(64));long now=System.currentTimeMillis();context.deleteDatabase("roster-conflict-a.db");context.deleteDatabase("roster-conflict-b.db");
+        try(PeerDatabase ad=new PeerDatabase(context,a,"roster-conflict-a.db");PeerDatabase bd=new PeerDatabase(context,b,"roster-conflict-b.db")){
+            RosterLedger al=new RosterLedger(ad,a),bl=new RosterLedger(bd,b);
+            String one=al.add(enrollmentRequest("1122334","Nombre uno"),now).getString("qr"),two=bl.add(enrollmentRequest("1122334","Nombre dos"),now).getString("qr");
+            assertEquals("accepted",new SharedLedger(ad,a).scan(sharedRequest(0,"almuerzo").put("qr",one),a.operator(-1),now).getString("status"));
+            bl.merge(al.events(bl.vector(),20));al.merge(bl.events(al.vector(),20));
+            assertEquals(2,ad.rows("people").size());assertEquals(ad.get("people","CI-1122334").toString(),bd.get("people","CI-1122334").toString());assertTrue(ad.get("people","CI-1122334").getBoolean("rosterConflict"));
+            assertEquals("duplicate",new SharedLedger(ad,a).scan(sharedRequest(0,"dieta").put("qr",two),a.operator(-1),now).getString("status"));
+            ad.getWritableDatabase().setVersion(4);
+        }
+        try(PeerDatabase reopened=new PeerDatabase(context,a,"roster-conflict-a.db")){
+            assertEquals(5,reopened.getReadableDatabase().getVersion());assertNotNull(reopened.get("people","CI-1122334"));assertEquals(1,new OfflineLedger(reopened,a).records().size());
+        }finally{context.deleteDatabase("roster-conflict-a.db");context.deleteDatabase("roster-conflict-b.db");}
+    }
+    @Test public void paymentPermissionControlsWorkerQrAndMealMutations()throws Exception{
+        bo.colbert.licensing.SecretStore vault=new bo.colbert.licensing.SecretStore(context);String[] keys={"clientConfig","permit","serverKey"};String[] previous=new String[keys.length];for(int i=0;i<keys.length;i++)previous[i]=vault.get(keys[i]);
+        java.lang.reflect.Field singleton=bo.colbert.licensing.LicenseClient.class.getDeclaredField("singleton");singleton.setAccessible(true);Object before=singleton.get(null);context.deleteDatabase("worker-license.db");
+        PeerEngine e=null;
+        try{
+            vault.put("clientConfig",new JSONObject().put("version",1).put("url","https://license.example.com").put("contractId","frigor-comedor").put("productId","frigor-comedor").put("token","e".repeat(64)).toString());vault.put("permit","");vault.put("serverKey","");
+            bo.colbert.licensing.LicenseClient client=new bo.colbert.licensing.LicenseClient(context,true,"frigor-comedor");singleton.set(null,client);
+            e=new PeerEngine(context,sharedConfig(0,"d".repeat(64)),"worker-license.db");
+            assertTrue(LicensingController.mutation(enrollmentRequest("7654321","Prueba")));
+            assertFalse(e.request(enrollmentRequest("7654321","Prueba")).getBoolean("ok"));assertNull(e.db.get("people","CI-7654321"));
+            assertFalse(e.request(new JSONObject().put("action","issue").put("plant","Planta 0").put("personId","SAP-12345")).getBoolean("ok"));assertFalse(e.request(sharedRequest(0,"almuerzo")).getBoolean("ok"));
+            java.security.KeyPairGenerator gen=java.security.KeyPairGenerator.getInstance("EC");gen.initialize(new java.security.spec.ECGenParameterSpec("secp256r1"));java.security.KeyPair pair=gen.generateKeyPair();long now=System.currentTimeMillis();
+            JSONObject claims=new JSONObject().put("version",1).put("contractId","frigor-comedor").put("productId","frigor-comedor").put("nonce","a".repeat(64)).put("issuedAt",now).put("expiresAt",now+86400000L).put("paidUntil",now+86400000L).put("allowed",true);
+            JSONObject envelope=bo.colbert.licensing.LicenseProtocol.sign(claims,pair.getPrivate(),pair.getPublic());vault.put("serverKey",envelope.getString("publicKey"));
+            JSONObject cache=new JSONObject().put("envelope",envelope).put("elapsed",android.os.SystemClock.elapsedRealtime()).put("boot",android.provider.Settings.Global.getInt(context.getContentResolver(),"boot_count",-1));vault.put("permit",cache.toString());
+            assertTrue(client.allowed());assertTrue(e.request(enrollmentRequest("7654321","Prueba")).getBoolean("ok"));assertNotNull(e.db.get("people","CI-7654321"));
+            claims.put("allowed",false).put("expiresAt",now);vault.put("permit",cache.put("envelope",bo.colbert.licensing.LicenseProtocol.sign(claims,pair.getPrivate(),pair.getPublic())).toString());
+            assertFalse(e.request(enrollmentRequest("7766554","Otra persona")).getBoolean("ok"));assertFalse(e.request(sharedRequest(0,"almuerzo")).getBoolean("ok"));assertNotNull(e.db.get("people","CI-7654321"));
+        }finally{if(e!=null){e.close();e.db.close();}context.deleteDatabase("worker-license.db");for(int i=0;i<keys.length;i++)vault.put(keys[i],previous[i]);singleton.set(null,before);}
+    }
     PeerConfig documentConfig() throws Exception {
         JSONObject raw=new JSONObject(sharedConfig(0,"f".repeat(64)).raw.toString());
         JSONObject seed=new JSONObject(raw.getString("seed"));
@@ -106,6 +162,8 @@ public class PeerDatabaseTest {
         assertEquals(ScanFeedback.Kind.PENDING,ScanFeedback.kind(new JSONObject().put("ok",true).put("status","unknown")));assertEquals(ScanFeedback.Kind.PENDING,ScanFeedback.kind(new JSONObject().put("ok",false)));assertEquals(0,ScanFeedback.delay(ScanFeedback.Kind.PENDING));
     }
     boolean containsText(android.view.View view,String text){if(view instanceof android.widget.TextView&&((android.widget.TextView)view).getText().toString().contains(text))return true;if(view instanceof android.view.ViewGroup)for(int i=0;i<((android.view.ViewGroup)view).getChildCount();i++)if(containsText(((android.view.ViewGroup)view).getChildAt(i),text))return true;return false;}
+    android.view.View findDescription(android.view.View v,String text){if(text.contentEquals(v.getContentDescription()==null?"":v.getContentDescription()))return v;if(v instanceof android.view.ViewGroup){android.view.ViewGroup g=(android.view.ViewGroup)v;for(int i=0;i<g.getChildCount();i++){android.view.View found=findDescription(g.getChildAt(i),text);if(found!=null)return found;}}return null;}
+    android.view.View findText(android.view.View v,String text){if(v instanceof android.widget.TextView&&text.contentEquals(((android.widget.TextView)v).getText()))return v;if(v instanceof android.view.ViewGroup){android.view.ViewGroup g=(android.view.ViewGroup)v;for(int i=0;i<g.getChildCount();i++){android.view.View found=findText(g.getChildAt(i),text);if(found!=null)return found;}}return null;}
     void waitText(MainActivity a,String text) throws Exception {long end=System.currentTimeMillis()+15000;java.util.concurrent.atomic.AtomicBoolean found=new java.util.concurrent.atomic.AtomicBoolean();while(System.currentTimeMillis()<end){InstrumentationRegistry.getInstrumentation().runOnMainSync(()->found.set(containsText(a.getWindow().getDecorView(),text)));if(found.get())return;Thread.sleep(70);}fail("UI text not found: "+text);}
     void shellUi(String command) throws Exception {try(android.os.ParcelFileDescriptor fd=InstrumentationRegistry.getInstrumentation().getUiAutomation().executeShellCommand(command);InputStream in=new android.os.ParcelFileDescriptor.AutoCloseInputStream(fd)){in.readAllBytes();}}
     void screenshot(String name) throws Exception {shellUi("mkdir -p /sdcard/Download/soboce-design");shellUi("screencap -p /sdcard/Download/soboce-design/"+name+".png");}
@@ -124,6 +182,14 @@ public class PeerDatabaseTest {
             long now=System.currentTimeMillis();new SharedLedger(db,uiConfig).scan(sharedRequest(0,"desayuno"),uiConfig.operator(-1),now);new SharedLedger(db,uiConfig).scan(sharedRequest(0,"cena"),uiConfig.operator(-1),now);
             InstrumentationRegistry.getInstrumentation().runOnMainSync(activity::report);waitText(activity,"ENTREGAS DEL DÍA");screenshot("05-reporte-diario");
             assertTrue(vault.get("pending").isEmpty());
+            InstrumentationRegistry.getInstrumentation().runOnMainSync(()->findDescription(activity.getWindow().getDecorView(),"Abrir menú de navegación").performClick());
+            Thread.sleep(300);screenshot("06-menu-superior");
+            InstrumentationRegistry.getInstrumentation().runOnMainSync(()->{assertNotNull(activity.navigation);findDescription(activity.navigation.getWindow().getDecorView(),"Nuevo trabajador").performClick();});
+            waitText(activity,"Guardar y generar QR");
+            InstrumentationRegistry.getInstrumentation().runOnMainSync(()->{for(int i=0;i<activity.page.getChildCount();i++){android.view.View v=activity.page.getChildAt(i);if(v instanceof android.widget.EditText){android.widget.EditText field=(android.widget.EditText)v;field.setText(field.getHint().toString().startsWith("Carnet")?"9876543":"María Elena — prueba");}}});
+            screenshot("07-nuevo-trabajador");
+            InstrumentationRegistry.getInstrumentation().runOnMainSync(()->findText(activity.getWindow().getDecorView(),"Guardar y generar QR").performClick());
+            waitText(activity,"Compartir o guardar tarjeta");screenshot("08-qr-trabajador");assertNotNull(db.get("people","CI-9876543"));
         }finally{InstrumentationRegistry.getInstrumentation().runOnMainSync(activity::finish);context.stopService(new android.content.Intent(context,PeerService.class));long end=System.currentTimeMillis()+5000;while(PeerService.engine!=null&&System.currentTimeMillis()<end)Thread.sleep(50);clearSetupVault(vault);}
     }
     Process namedConnector(PeerConfig config) throws Exception {
@@ -219,7 +285,9 @@ public class PeerDatabaseTest {
             elect(engines,0,1);
             assertEquals("accepted",engines[1].request(sharedRequest(1,"almuerzo")).getString("status"));
             assertEquals("duplicate",engines[2].request(sharedRequest(2,"almuerzo")).getString("status"));
-            for(PeerEngine e:engines)e.sync();for(PeerEngine e:engines)assertEquals(1,e.offline.records().size());
+            for(int i=0;i<25;i++)assertTrue(engines[3].request(enrollmentRequest("90000"+i,"Trabajador "+i).put("plant","Planta 3")).getBoolean("ok"));
+            for(PeerEngine e:engines)e.sync();for(PeerEngine e:engines)e.sync();
+            for(PeerEngine e:engines){assertEquals(1,e.offline.records().size());assertEquals(26,e.db.rows("people").size());assertNotNull(e.db.get("people","CI-9000024"));}
             online[0]=false;assertEquals("accepted",engines[2].request(sharedRequest(2,"cena")).getString("status"));assertEquals(1,engines[2].shared.ledger.pending());
             leader[0]=1;elect(engines,1,2);engines[2].sync();engines[3].sync();assertEquals(0,engines[2].shared.ledger.pending());
             online[0]=true;engines[0].sync();

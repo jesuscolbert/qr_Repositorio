@@ -21,7 +21,12 @@ final class BillingRuntime {
  void setup()throws Exception{
   if(privateKey==null){KeyPairGenerator gen=KeyPairGenerator.getInstance("EC");gen.initialize(new ECGenParameterSpec("secp256r1"));KeyPair pair=gen.generateKeyPair();JSONObject k=new JSONObject().put("private",Base64.getEncoder().encodeToString(pair.getPrivate().getEncoded())).put("public",Base64.getEncoder().encodeToString(pair.getPublic().getEncoded()));vault.put("signingKey",k.toString());loadKey(k);}
   if(config==null){try(InputStream in=context.getAssets().open("billing-server.json")){config=new JSONObject(new String(LicenseClient.read(in,1024*1024),StandardCharsets.UTF_8));}vault.put("serverConfig",config.toString());}
-  JSONArray seeds=config.getJSONArray("contracts");for(int i=0;i<seeds.length();i++){JSONObject seed=seeds.getJSONObject(i);if(db.get("contract",seed.getString("id"))==null){vault.put("token:"+seed.getString("id"),seed.getString("token"));db.create(seed.getString("id"),seed.getString("customer"),seed.getString("productId"),seed.getString("productName"),seed.getString("token"),System.currentTimeMillis());}}
+  config=BundledContracts.apply(db,vault,config,config,System.currentTimeMillis());refreshBundled();vault.put("serverConfig",config.toString());
+ }
+ void refreshBundled()throws Exception{
+  if(config==null)return;JSONObject bundled;
+  try(InputStream in=context.getAssets().open("billing-server.json")){bundled=new JSONObject(new String(LicenseClient.read(in,1024*1024),StandardCharsets.UTF_8));}catch(FileNotFoundException absent){return;}
+  config=BundledContracts.apply(db,vault,config,bundled,System.currentTimeMillis());vault.put("serverConfig",config.toString());
  }
  void loadKey(JSONObject k)throws Exception{KeyFactory f=KeyFactory.getInstance("EC");privateKey=f.generatePrivate(new PKCS8EncodedKeySpec(Base64.getDecoder().decode(k.getString("private"))));publicKey=f.generatePublic(new X509EncodedKeySpec(Base64.getDecoder().decode(k.getString("public"))));}
  JSONObject sign(JSONObject claims)throws Exception{if(privateKey==null)throw new IOException("Servidor sin inicializar.");return LicenseProtocol.sign(claims,privateKey,publicKey);}

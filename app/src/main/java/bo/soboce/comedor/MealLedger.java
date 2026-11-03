@@ -34,7 +34,7 @@ final class MealLedger {
         String plant=r.optString("plant");boolean known=false;for(int i=0;i<plants.length();i++)known|=plants.getString(i).equals(plant);
         PeerConfig.require(all||known&&(admin||op.getString("plant").equals(plant)),"No tienes permiso para esta planta.");
         if(action.equals("people")){
-            JSONArray people=new JSONArray();for(JSONObject p:db.rows("people"))if(p.optBoolean("activo")&&p.getString("planta").equals(plant))people.put(new JSONObject().put("id",p.getString("id")).put("sap",p.optString("sap")).put("documento",p.optString("documento")).put("nombre",p.getString("nombre")).put("planta",plant).put("tipo",p.getString("tipo")));
+            JSONArray people=new JSONArray();for(JSONObject p:db.rows("people"))if(p.optBoolean("activo")&&p.getString("planta").equals(plant))people.put(new JSONObject().put("id",p.getString("id")).put("sap",p.optString("sap")).put("documento",p.optString("documento")).put("rosterConflict",p.optBoolean("rosterConflict")).put("nombre",p.getString("nombre")).put("planta",plant).put("tipo",p.getString("tipo")));
             return ok().put("people",people);
         }
         if(action.equals("today")||action.equals("report")||action.equals("conflicts")){

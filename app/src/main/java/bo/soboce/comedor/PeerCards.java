@@ -8,12 +8,13 @@ import java.util.*;
 /** Signed credentials can be issued locally; only the replicated ledger authorizes a meal. */
 final class PeerCards {
     private static final List<String> MEALS=Meals.ALL;
-    static boolean local(String action){return Arrays.asList("session","people","today","report","conflicts","issue","visitor").contains(action);}
-    static boolean format(String qr){return qr!=null&&qr.length()<=2048&&qr.matches("SB[23]:[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+");}
+    static boolean local(String action){return Arrays.asList("session","people","today","report","conflicts","issue","visitor","worker").contains(action);}
+    static boolean format(String qr){return RosterLedger.format(qr)||qr!=null&&qr.length()<=2048&&qr.matches("SB[23]:[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+");}
 
     static JSONObject request(PeerDatabase db,PeerConfig config,JSONObject request,long now) throws Exception {
         try {
             String action=request.getString("action");
+            if(action.equals("worker"))return new RosterLedger(db,config).add(request,now);
             if(!action.equals("issue")&&!action.equals("visitor"))return new MealLedger(db,config).read(request);
             synchronized(db){return issue(db,config,request,now);}
         }catch(IllegalArgumentException e){return new JSONObject().put("ok",false).put("definitive",true).put("error",e.getMessage());}
@@ -32,6 +33,7 @@ final class PeerCards {
         if(r.getString("action").equals("issue")) {
             JSONObject p=db.get("people",r.optString("personId"));
             PeerConfig.require(p!=null&&p.optBoolean("activo")&&p.optString("planta").equals(plant)&&!p.optString("tipo").equals("VISITA"),"Trabajador activo no encontrado en esta planta.");
+            if(config.shared&&!new RosterLedger(db,config).qrFor(p.getString("id")).isEmpty())return new RosterLedger(db,config).card(p);
             body.put("kind","employee").put("id",p.getString("id"));name=p.getString("nombre");detail=PersonIdentity.label(p)+" · "+plant;
         } else {
             name=r.optString("name").trim();String document=r.optString("document").toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9]",""),cost=r.optString("costCenter").trim(),expires=r.optString("expires"),meals=r.optString("meals");
@@ -59,7 +61,7 @@ final class PeerCards {
         catch(JSONException e){throw new IllegalArgumentException("La tarjeta QR está incompleta.");}
     }
     private static JSONObject resolveChecked(PeerDatabase db,PeerConfig config,String qr,long when) throws Exception {
-        PeerConfig.require(format(qr),"QR no reconocido.");JSONObject card;
+        PeerConfig.require(format(qr),"QR no reconocido.");if(RosterLedger.format(qr))return new RosterLedger(db,config).accept(qr,when);JSONObject card;
         try {
             String[] parts=qr.substring(4).split("\\.",-1);String body=new String(Base64.getUrlDecoder().decode(parts[0]),StandardCharsets.UTF_8);
             card=new JSONObject(body);

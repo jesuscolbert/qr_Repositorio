@@ -1,0 +1,4 @@
+<resources>
+ <bool name="colbert_license_required">true</bool>
+ <string name="colbert_license_product" translatable="false">soboce-comedor</string>
+</resources>

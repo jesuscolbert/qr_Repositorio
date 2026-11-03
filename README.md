@@ -1,5 +1,17 @@
 # SOBOCE Comedor
 
+## Menú, altas y permisos FRIGOR — 1.8.0
+
+El botón **Menú** queda fijo en la parte superior y abre un panel lateral. Inicio conserva la comida seleccionada, el lector y el acceso al reporte diario. Trabajadores, visitantes, reportes, red, pagos y ajustes se abren desde el panel.
+
+**Nuevo trabajador** pide carnet y nombre opcional. Conserva los ceros iniciales y admite complemento con guion. Si ya existe, devuelve su credencial sin sustituir la identidad ni el historial. Las altas se firman como tarjetas `SB4` y se replican en un registro independiente del padrón inicial. El QR puede incorporar al trabajador en otro teléfono actualizado antes de la sincronización. El documento estable mantiene el límite de comida; las altas simultáneas del mismo carnet convergen en una sola persona y se señalan para revisar el nombre. Esto no verifica que un documento declarado sea auténtico.
+
+La sincronización usa **protocolo 6** y SQLite migra a versión 5 conservando los datos. Los rangos de secuencias del padrón permiten recibir primero un QR posterior sin omitir altas anteriores. Se conservan el manifiesto, la red, los QR previos y el historial. Actualizar todos los teléfonos de FRIGOR; 1.7.1 no entiende las nuevas altas.
+
+FRIGOR 1.8 requiere su propio contrato en **Colbert Cobros 1.1**. Instalar primero la actualización de Cobros en el teléfono del propietario y abrirla; añade FRIGOR sin reiniciar contratos, precios, pagos, comprobantes ni la firma del servidor. Después actualizar todos los teléfonos FRIGOR, sin desinstalar. La primera validación necesita al servidor con internet. La licencia cubre todos los equipos del cliente/aplicación. Una suspensión impide nuevas entregas, altas y emisión de tarjetas, conservando el historial, su consulta y sincronización. La tolerancia sin conexión sigue limitada a 24 horas desde la validación y al período pagado. **FRIGOR 1.7.1 no puede bloquearse remotamente; debe actualizarse.**
+
+Las APK de producción fallan cerradas si falta su configuración de licencia o corresponde a otro producto. El único target sin licencia obligatoria es `debug`, usado para pruebas sintéticas; no se distribuye. GitHub compila los binarios genéricos sin datos privados. `scripts/package_billing_update.py APK-COBROS` y `scripts/package_frigor.py APK-FRIGOR` añaden los paquetes privados y verifican la firma estable sin compilar localmente.
+
 ## FRIGOR separado — 1.7.1
 
 La variante `frigor` instala **FRIGOR Comedor** (`bo.soboce.comedor.frigor`) junto a SOBOCE. Tiene datos y credenciales independientes y usa el puerto local 8788, evitando interferir con el receptor de SOBOCE (8787). Su red usa `https://frigor.colbertconsorcio.shop`, el túnel `frigor-comedor-compartido` y un Worker de coordinación exclusivo. No se modifican los servicios ni el padrón de SOBOCE.
@@ -10,7 +22,7 @@ Las listas y tarjetas muestran CI o SAP según corresponda. Buscar por carnet no
 
 El libro privado de revisión permite completar nombres; editarlo no actualiza automáticamente los teléfonos. El padrón inicial forma parte del manifiesto de red: una futura actualización debe conservar ese manifiesto, los identificadores y el historial, no regenerar la red con otro seed.
 
-No se han suministrado tarifas de FRIGOR. Los registros quedan marcados con precio pendiente, el reporte muestra raciones y el CSV deja vacío el importe pendiente. No se copian las tarifas ni el contrato de licencia de SOBOCE. El módulo de cobros permanece disponible para integrarlo con un contrato propio; este instalador de FRIGOR no lo activa.
+No se han suministrado tarifas de comida de FRIGOR. Los registros quedan marcados con precio pendiente, el reporte muestra raciones y el CSV deja vacío el importe pendiente. No se copian las tarifas ni el contrato de licencia de SOBOCE. El instalador histórico 1.7.1 no activaba cobros; 1.8 lo integra mediante un contrato propio.
 
 Preparación: importar el archivo, ejecutar `scripts/provision_frigor.py`, desplegar `backend/coordination/wrangler.frigor.jsonc`, configurar su secreto `NETWORK_KEY` desde el paquete privado y completar `--coordinator`. GitHub compila y valida `:app:assembleFrigor`. `scripts/package_frigor.py APK-DE-GITHUB` incorpora únicamente los datos privados de FRIGOR y firma la APK, sin compilar localmente. No publicar la APK privada ni el Excel. Los tests solo usan datos sintéticos; el secreto temporal `FRIGOR_SHARED_TEST_CONFIG_B64` se elimina al terminar la validación inicial de su nueva conexión.
 

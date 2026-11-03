@@ -12,7 +12,7 @@ final class PeerDatabase extends SQLiteOpenHelper implements QuorumLog.Storage {
         this(context,config,"comedor-peers.db");
     }
     PeerDatabase(Context context, PeerConfig config,String databaseName) throws Exception {
-        super(context,databaseName,null,4); this.config=config;
+        super(context,databaseName,null,5); this.config=config;
         SQLiteDatabase db=getWritableDatabase();
         db.beginTransaction();
         try {
@@ -31,6 +31,7 @@ final class PeerDatabase extends SQLiteOpenHelper implements QuorumLog.Storage {
                 for(int i=0;i<people.length();i++)save("people",people.getJSONObject(i).getString("id"),people.getJSONObject(i));
                 putMeta("applied","0");applyCommitted();putMeta("projectionVersion","2");
             }
+            new RosterLedger(this,config).replay();
             db.setTransactionSuccessful();
         } finally { db.endTransaction(); }
     }
@@ -42,11 +43,13 @@ final class PeerDatabase extends SQLiteOpenHelper implements QuorumLog.Storage {
         for(String name:new String[]{"people","meals","results"}) db.execSQL("CREATE TABLE "+name+"(id TEXT PRIMARY KEY,json TEXT NOT NULL)");
         OfflineLedger.create(db);
         SharedLedger.create(db);
+        RosterLedger.create(db);
     }
     @Override public void onUpgrade(SQLiteDatabase db,int old,int version){
-        if(old<1||old>3||version!=4)throw new IllegalStateException("Se requiere migración sin pérdida de datos.");
+        if(old<1||old>4||version!=5)throw new IllegalStateException("Se requiere migración sin pérdida de datos.");
         OfflineLedger.create(db);
         SharedLedger.create(db);
+        RosterLedger.create(db);
         // The constructor replays after SQLiteOpenHelper has finished opening the database.
         if(old==1)db.execSQL("DELETE FROM meta WHERE k='projectionVersion'");
     }

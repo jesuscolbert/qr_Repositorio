@@ -38,7 +38,7 @@ class SharedNetwork {
             engine.state=detail+" · "+recent+" · "+ledger.pending()+(leading()?" entregas de este servidor sin copia confirmada en otro teléfono":" entregas locales pendientes de llegar al servidor");
         }catch(Exception ignored){engine.state=detail;}
     }
-    JSONObject status() throws Exception {return new JSONObject().put("protocol",5).put("device",config.device).put("epoch",lease.epoch).put("vector",ledger.vector()).put("oldVector",engine.offline.vector()).put("applied",engine.db.applied());}
+    JSONObject status() throws Exception {return new JSONObject().put("protocol",6).put("device",config.device).put("epoch",lease.epoch).put("vector",ledger.vector()).put("rosterVector",new RosterLedger(engine.db,config).vector()).put("oldVector",engine.offline.vector()).put("applied",engine.db.applied());}
     JSONObject handle(JSONObject envelope) throws Exception {
         PeerConfig.require(leading(),"Servidor relevado.");
         String nonce=envelope.getString("nonce"),payload=envelope.getString("payload");long time=envelope.getLong("time"),epoch=envelope.getLong("epoch");
@@ -52,13 +52,13 @@ class SharedNetwork {
     JSONObject dispatch(JSONObject r) throws Exception {
         PeerConfig.require(leading(),"Servidor relevado.");String method=r.getString("method");
         if(method.equals("status"))return status();
-        PeerConfig.require(r.optInt("protocol")==5,"Actualiza todos los teléfonos a 1.6 para sincronizar Dieta.");
+        PeerConfig.require(r.optInt("protocol")==6,"Actualiza todos los teléfonos a 1.8 para compartir trabajadores y consumos.");
         if(method.equals("scan"))return ledger.scan(r.getJSONObject("request"),r.getJSONObject("operator"),System.currentTimeMillis(),engine.license.allowed());
         PeerConfig.require(method.equals("exchange"),"Método inválido.");
         String source=r.getString("device");PeerConfig.require(source.matches("[a-f0-9]{64}")&&!source.equals(config.device),"Instalación repetida.");
         synchronized(engine.db){
-            mergeHistory(r.getJSONArray("history"));engine.offline.merge(r.getJSONArray("oldEvents"));ledger.merge(r.getJSONArray("events"));
-            JSONObject reply=status().put("events",ledger.events(r.getJSONObject("after"),20)).put("oldEvents",engine.offline.events(r.getJSONArray("oldAfter"),20)).put("history",engine.db.history(r.getLong("applied"),20));
+            new RosterLedger(engine.db,config).merge(r.getJSONArray("rosterEvents"));mergeHistory(r.getJSONArray("history"));engine.offline.merge(r.getJSONArray("oldEvents"));ledger.merge(r.getJSONArray("events"));
+            JSONObject reply=status().put("rosterEvents",new RosterLedger(engine.db,config).events(r.getJSONObject("rosterAfter"),20)).put("events",ledger.events(r.getJSONObject("after"),20)).put("oldEvents",engine.offline.events(r.getJSONArray("oldAfter"),20)).put("history",engine.db.history(r.getLong("applied"),20));
             // A client has durably stored these heads before advertising them.
             long copied=r.getJSONObject("after").optLong(config.device);
             long previous=Long.parseLong(engine.db.meta("sharedAck","0"));if(copied>previous)engine.db.putMeta("sharedAck",Long.toString(Math.min(copied,ledger.vector().optLong(config.device))));
@@ -69,7 +69,7 @@ class SharedNetwork {
     private void mergeHistory(JSONArray history) throws Exception {PeerConfig.require(history.length()<=20,"Página demasiado grande.");for(int i=0;i<history.length();i++)engine.db.learn(PeerDatabase.decode(history.getJSONObject(i)));}
     JSONObject rpc(JSONObject request) throws Exception {
         PeerConfig.require(lease.known(SystemClock.elapsedRealtime()),"Servidor sin confirmar.");
-        long epoch=lease.epoch,now=System.currentTimeMillis();String nonce=PeerConfig.random(),payload=request.put("protocol",5).toString();
+        long epoch=lease.epoch,now=System.currentTimeMillis();String nonce=PeerConfig.random(),payload=request.put("protocol",6).toString();
         JSONObject env=new JSONObject().put("epoch",epoch).put("time",now).put("nonce",nonce).put("payload",payload).put("signature",config.mac("rpc|"+epoch+"|"+now+"|"+nonce+"|"+payload));
         JSONObject response=http(config.raw.getString("url")+"/rpc",env,null);String data=response.getString("payload");
         PeerConfig.require(epoch==lease.epoch&&PeerConfig.equal(config.mac("reply|"+epoch+"|"+nonce+"|"+data),response.getString("signature")),"Respuesta de servidor anterior o no autenticada.");return new JSONObject(data);
@@ -84,23 +84,23 @@ class SharedNetwork {
             }
             if(!lease.known(SystemClock.elapsedRealtime())){updateState();return;}
             exchange();
-        }catch(Exception e){detail=e instanceof IllegalArgumentException&&e.getMessage()!=null&&e.getMessage().startsWith("Actualiza")?"Actualiza todos los teléfonos a 1.6 para compartir Dieta":"Sin intercambio confirmado · se reintentará automáticamente";}
+        }catch(Exception e){detail=e instanceof IllegalArgumentException&&e.getMessage()!=null&&e.getMessage().startsWith("Actualiza")?"Actualiza todos los teléfonos a 1.8 para compartir trabajadores y consumos":"Sin intercambio confirmado · se reintentará automáticamente";}
         finally{engine.syncing=false;updateState();}
     }
     synchronized void exchange() throws Exception {
         JSONObject remote=rpc(new JSONObject().put("method","status"));
-        PeerConfig.require(remote.getInt("protocol")==5&&!remote.getString("device").equals(config.device),"Actualiza los teléfonos o revisa la instalación.");
+        PeerConfig.require(remote.getInt("protocol")==6&&!remote.getString("device").equals(config.device),"Actualiza los teléfonos o revisa la instalación.");
         boolean complete=false;
         for(int page=0;page<64&&!engine.closed;page++){
             JSONObject request;
-            synchronized(engine.db){request=new JSONObject().put("method","exchange").put("protocol",5).put("device",config.device).put("after",ledger.vector()).put("oldAfter",engine.offline.vector()).put("applied",engine.db.applied()).put("events",ledger.events(remote.getJSONObject("vector"),20)).put("oldEvents",engine.offline.events(remote.getJSONArray("oldVector"),20)).put("history",engine.db.history(remote.getLong("applied"),20));}
+            synchronized(engine.db){request=new JSONObject().put("method","exchange").put("protocol",6).put("device",config.device).put("rosterAfter",new RosterLedger(engine.db,config).vector()).put("rosterEvents",new RosterLedger(engine.db,config).events(remote.getJSONObject("rosterVector"),20)).put("after",ledger.vector()).put("oldAfter",engine.offline.vector()).put("applied",engine.db.applied()).put("events",ledger.events(remote.getJSONObject("vector"),20)).put("oldEvents",engine.offline.events(remote.getJSONArray("oldVector"),20)).put("history",engine.db.history(remote.getLong("applied"),20));}
             remote=rpc(request);
-            synchronized(engine.db){mergeHistory(remote.getJSONArray("history"));engine.offline.merge(remote.getJSONArray("oldEvents"));ledger.merge(remote.getJSONArray("events"));ledger.acknowledge(remote.getJSONObject("vector"));}
+            synchronized(engine.db){new RosterLedger(engine.db,config).merge(remote.getJSONArray("rosterEvents"));mergeHistory(remote.getJSONArray("history"));engine.offline.merge(remote.getJSONArray("oldEvents"));ledger.merge(remote.getJSONArray("events"));ledger.acknowledge(remote.getJSONObject("vector"));}
             lastExchange=System.currentTimeMillis();
-            complete=request.getJSONArray("events").length()+request.getJSONArray("oldEvents").length()+request.getJSONArray("history").length()+remote.getJSONArray("events").length()+remote.getJSONArray("oldEvents").length()+remote.getJSONArray("history").length()==0;
+            complete=request.getJSONArray("rosterEvents").length()+remote.getJSONArray("rosterEvents").length()+request.getJSONArray("events").length()+request.getJSONArray("oldEvents").length()+request.getJSONArray("history").length()+remote.getJSONArray("events").length()+remote.getJSONArray("oldEvents").length()+remote.getJSONArray("history").length()==0;
             if(complete)break;
         }
-        detail=complete?"Conectado · entregas compartidas":"Compartiendo historial; continuará automáticamente";
+        detail=complete?"Conectado · trabajadores y entregas compartidos":"Compartiendo historial; continuará automáticamente";
     }
     JSONObject scan(JSONObject request) throws Exception {
         String id=request.getString("requestId"),marker="remoteAttempt:"+id;
@@ -109,18 +109,18 @@ class SharedNetwork {
         String pending=engine.db.meta(marker,"");
         if(leading()){
             if(!pending.isEmpty())return uncertain(); // A previous server may have committed; never blindly re-authorize.
-            return ledger.scan(request,config.operator(-1),System.currentTimeMillis());
+            return ledger.scan(request,config.operator(-1),System.currentTimeMillis(),engine.license.allowed());
         }
         try {exchange();}catch(Exception offline){
             if(!pending.isEmpty())return uncertain();
-            return ledger.scan(request,config.operator(-1),System.currentTimeMillis());
+            return ledger.scan(request,config.operator(-1),System.currentTimeMillis(),engine.license.allowed());
         }
         saved=engine.db.get("shared_results",id);
         if(saved!=null)return SharedLedger.recovered(saved.getJSONObject("reply"));
         if(!pending.isEmpty()&&!pending.equals(Long.toString(lease.epoch)))return uncertain();
         engine.db.putMeta(marker,Long.toString(lease.epoch));
         try{
-            JSONObject reply=rpc(new JSONObject().put("method","scan").put("protocol",5).put("request",request).put("operator",config.operator(-1)));
+            JSONObject reply=rpc(new JSONObject().put("method","scan").put("protocol",6).put("request",request).put("operator",config.operator(-1)));
             if(reply.optBoolean("ok")||reply.optBoolean("definitive")){
                 synchronized(engine.db){engine.db.save("shared_results",id,new JSONObject().put("request",request).put("reply",reply));engine.db.putMeta(marker,"");}
                 try{exchange();}catch(Exception ignored){/* The receipt is confirmed; replication resumes automatically. */}

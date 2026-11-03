@@ -14,12 +14,16 @@ public final class LicenseClient {
  public static synchronized LicenseClient get(Context c){if(singleton==null)singleton=new LicenseClient(c);return singleton;}
  private final Context context;private final SecretStore vault;private JSONObject config;private boolean broken;
  public LicenseClient(Context c){
+  this(c,c.getResources().getBoolean(R.bool.colbert_license_required),c.getString(R.string.colbert_license_product));
+ }
+ public LicenseClient(Context c,boolean required,String expectedProduct){
   context=c.getApplicationContext();vault=new SecretStore(context);
   try{
    String saved=vault.get("clientConfig");
    if(!saved.isEmpty())config=new JSONObject(saved);
    else try(InputStream in=context.getAssets().open("license-client.json")){config=new JSONObject(new String(read(in,32768),StandardCharsets.UTF_8));vault.put("clientConfig",config.toString());}catch(FileNotFoundException absent){config=null;}
-   if(config!=null)validateConfig(config);
+   if(config!=null){validateConfig(config);LicenseProtocol.require(expectedProduct.isEmpty()||expectedProduct.equals(config.getString("productId")),"La licencia pertenece a otra aplicación.");}
+   else if(required)broken=true;
   }catch(Exception e){broken=true;}
  }
  public static void validateConfig(JSONObject c)throws Exception {

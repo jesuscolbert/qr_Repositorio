@@ -1,0 +1,5 @@
+<resources>
+ <!-- Only the unshipped instrumentation target can run without an owner server. -->
+ <bool name="colbert_license_required">false</bool>
+ <string name="colbert_license_product" translatable="false"></string>
+</resources>

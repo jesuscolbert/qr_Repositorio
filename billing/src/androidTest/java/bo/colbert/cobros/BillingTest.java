@@ -19,6 +19,29 @@ import bo.colbert.licensing.*;
 
 @RunWith(AndroidJUnit4.class)
 public class BillingTest {
+ JSONObject bundled(String extraToken)throws Exception{
+  JSONObject old=new JSONObject().put("id","tenant-one").put("customer","Cliente de prueba").put("productId","comedor").put("productName","Comedor").put("token",token);
+  JSONObject extra=new JSONObject().put("id","frigor-upgrade-test").put("customer","FRIGOR").put("productId","frigor-comedor").put("productName","FRIGOR Comedor").put("token",extraToken);
+  return new JSONObject().put("version",1).put("url","https://billing.example.com").put("tunnel",new JSONObject().put("TunnelID","test-tunnel").put("AccountTag","test-account").put("TunnelSecret","test-secret")).put("contracts",new JSONArray().put(old).put(extra));
+ }
+ @Test public void ownerUpdateAddsFrigorOnceWithoutResettingPaymentsOrSigningIdentity()throws Exception{
+  bo.colbert.licensing.SecretStore vault=new bo.colbert.licensing.SecretStore(context);String[] keys={"token:tenant-one","token:frigor-upgrade-test","signingKey"};String[] saved=new String[keys.length];for(int i=0;i<keys.length;i++)saved[i]=vault.get(keys[i]);
+  try{
+   for(String k:keys)vault.put(k,"");vault.put("signingKey","existing-test-signing-identity");charge("month");db.review(upload().getString("receiptId"),true,"Verificado",now);String paid=db.contract("tenant-one").toString();
+   JSONObject bundle=bundled(LicenseProtocol.random()),current=new JSONObject(bundle.toString());current.getJSONArray("contracts").remove(1);
+   JSONObject updated=BundledContracts.apply(db,vault,current,bundle,now+1);assertEquals(2,updated.getJSONArray("contracts").length());assertEquals(2,db.contracts().length());assertEquals(paid,db.contract("tenant-one").toString());assertEquals("existing-test-signing-identity",vault.get("signingKey"));
+   db.suspend("frigor-upgrade-test",now+2);String blocked=db.contract("frigor-upgrade-test").toString();
+   BundledContracts.apply(db,vault,updated,bundle,now+3);assertEquals(blocked,db.contract("frigor-upgrade-test").toString());assertEquals(paid,db.contract("tenant-one").toString());assertTrue(status().getBoolean("allowed"));assertFalse(db.status("frigor-upgrade-test",LicenseProtocol.random(),now+3).getBoolean("allowed"));
+  }finally{for(int i=0;i<keys.length;i++)vault.put(keys[i],saved[i]);}
+ }
+ @Test public void incompatibleOwnerBundleCannotPartiallyAddContracts()throws Exception{
+  bo.colbert.licensing.SecretStore vault=new bo.colbert.licensing.SecretStore(context);String old=vault.get("token:tenant-one"),extra=vault.get("token:frigor-upgrade-test");
+  try{
+   vault.put("token:tenant-one",token);vault.put("token:frigor-upgrade-test","");JSONObject good=bundled(LicenseProtocol.random());JSONObject bad=new JSONObject(good.toString());bad.getJSONArray("contracts").getJSONObject(0).put("token",LicenseProtocol.random());
+   reject(()->BundledContracts.apply(db,vault,good,bad,now));assertEquals(1,db.contracts().length());assertEquals("",vault.get("token:frigor-upgrade-test"));
+   JSONObject wrongTunnel=new JSONObject(good.toString());wrongTunnel.getJSONObject("tunnel").put("TunnelID","another-server");reject(()->BundledContracts.apply(db,vault,good,wrongTunnel,now));assertEquals(1,db.contracts().length());assertEquals(token,vault.get("token:tenant-one"));
+  }finally{vault.put("token:tenant-one",old);vault.put("token:frigor-upgrade-test",extra);}
+ }
  Context context;BillingDb db;String name,token;long now=java.time.Instant.parse("2026-10-31T16:00:00Z").toEpochMilli();
  @Before public void setup()throws Exception{context=InstrumentationRegistry.getInstrumentation().getTargetContext();name="billing-test-"+UUID.randomUUID()+".db";db=new BillingDb(context,name);token=LicenseProtocol.random();db.create("tenant-one","Cliente de prueba","comedor","Comedor",token,now);}
  @After public void close(){db.close();context.deleteDatabase(name);}
