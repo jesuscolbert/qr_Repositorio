@@ -11,16 +11,21 @@ import java.nio.charset.StandardCharsets;
 /** One reusable guard for native Android products. The server owns all prices and decisions. */
 public final class LicenseClient {
  private static LicenseClient singleton;
- public static synchronized LicenseClient get(Context c){if(singleton==null)singleton=new LicenseClient(c);return singleton;}
+ public interface Provider {LicenseClient currentLicense();}
+ public static synchronized LicenseClient get(Context c){Context app=c.getApplicationContext();if(app instanceof Provider){LicenseClient scoped=((Provider)app).currentLicense();if(scoped!=null)return scoped;}if(singleton==null)singleton=new LicenseClient(c);return singleton;}
  private final Context context;private final SecretStore vault;private JSONObject config;private boolean broken;
  public LicenseClient(Context c){
   this(c,c.getResources().getBoolean(R.bool.colbert_license_required),c.getString(R.string.colbert_license_product));
  }
  public LicenseClient(Context c,boolean required,String expectedProduct){
-  context=c.getApplicationContext();vault=new SecretStore(context);
+  this(c,required,expectedProduct,null,"",true);
+ }
+ public LicenseClient(Context c,boolean required,String expectedProduct,JSONObject bundled,String namespace){this(c,required,expectedProduct,bundled,namespace,false);}
+ private LicenseClient(Context c,boolean required,String expectedProduct,JSONObject supplied,String namespace,boolean readAsset){
+  context=c.getApplicationContext();vault=new SecretStore(context,namespace);
   try{
-   String saved=vault.get("clientConfig");JSONObject bundled=null;
-   try(InputStream in=context.getAssets().open("license-client.json")){bundled=new JSONObject(new String(read(in,32768),StandardCharsets.UTF_8));}catch(FileNotFoundException absent){/* Some library integrations configure credentials separately. */}
+   String saved=vault.get("clientConfig");JSONObject bundled=supplied;
+   if(readAsset)try(InputStream in=context.getAssets().open("license-client.json")){bundled=new JSONObject(new String(read(in,32768),StandardCharsets.UTF_8));}catch(FileNotFoundException absent){/* Some library integrations configure credentials separately. */}
    if(!saved.isEmpty()){config=new JSONObject(saved);if(bundled!=null)config=EndpointMigration.license(config,bundled);}
    else config=bundled;
    if(config!=null){validateConfig(config);LicenseProtocol.require(expectedProduct.isEmpty()||expectedProduct.equals(config.getString("productId")),"La licencia pertenece a otra aplicación.");if(!config.toString().equals(saved))vault.put("clientConfig",config.toString());}

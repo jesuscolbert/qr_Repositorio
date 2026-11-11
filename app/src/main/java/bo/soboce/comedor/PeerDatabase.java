@@ -9,7 +9,7 @@ import java.util.*;
 final class PeerDatabase extends SQLiteOpenHelper implements QuorumLog.Storage {
     final PeerConfig config;
     PeerDatabase(Context context, PeerConfig config) throws Exception {
-        this(context,config,"comedor-peers.db");
+        this(context,config,Companies.database(context,config));
     }
     PeerDatabase(Context context, PeerConfig config,String databaseName) throws Exception {
         super(context,databaseName,null,5); this.config=config;

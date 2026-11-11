@@ -27,8 +27,8 @@ class PeerEngine implements QuorumLog.Network, AutoCloseable {
     volatile int connected=1;
     volatile boolean syncing;
     volatile String state="Registro local disponible. Buscando teléfonos para sincronizar…";
-    PeerEngine(Context context,PeerConfig config) throws Exception {this(context,config,"comedor-peers.db");}
-    PeerEngine(Context context,PeerConfig config,String databaseName) throws Exception {this.config=config;localPort=context.getResources().getInteger(R.integer.peer_port);serviceName=context.getString(R.string.app_name);license=bo.colbert.licensing.LicenseClient.get(context);db=new PeerDatabase(context,config,databaseName);offline=new OfflineLedger(db,config);shared=config.shared?new SharedNetwork(this):null;synchronized(db){String saved=db.meta("instance","");if(saved.isEmpty()){saved=UUID.randomUUID().toString();db.putMeta("instance",saved);}instance=saved;}}
+    PeerEngine(Context context,PeerConfig config) throws Exception {this(context,config,Companies.database(context,config));}
+    PeerEngine(Context context,PeerConfig config,String databaseName) throws Exception {this.config=config;localPort=context.getResources().getInteger(R.integer.peer_port);serviceName=context.getString(R.string.app_name);license=Companies.license(context,config);db=new PeerDatabase(context,config,databaseName);offline=new OfflineLedger(db,config);shared=config.shared?new SharedNetwork(this):null;synchronized(db){String saved=db.meta("instance","");if(saved.isEmpty()){saved=UUID.randomUUID().toString();db.putMeta("instance",saved);}instance=saved;}}
     void start() throws IOException {
         server=new ServerSocket();server.setReuseAddress(true);server.bind(new InetSocketAddress(InetAddress.getByName("127.0.0.1"),localPort),16);
         Thread acceptor=new Thread(()->{

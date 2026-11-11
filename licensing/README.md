@@ -4,6 +4,10 @@ Servicio de permisos administrado desde un teléfono Android dedicado. Un contra
 
 FRIGOR 1.8 usa un contrato independiente. Colbert Cobros 1.1 incorpora ese contrato al abrir la actualización sin reemplazar los contratos anteriores, la clave de firma, los precios ni pagos existentes. Instalar encima de las versiones anteriores y tocar **Encender servidor** en el teléfono del propietario antes de la primera validación de FRIGOR. Actualizar todos los teléfonos FRIGOR: 1.7.1 no incorporaba el control de licencias.
 
+## Dos empresas en el mismo cliente — 1.9.0
+
+SOBOCE y FRIGOR tienen almacenes de permisos y credenciales separados dentro de la app. Seleccionar otra empresa cambia el contrato consultado; nunca copia la clave fijada, el permiso ni un comprobante de la empresa anterior. El servidor mantiene los contratos existentes. Para cobrar por mes: abrir la empresa, **Editar precio, frecuencia y QR de pago**, escribir el monto, seleccionar **Mensual**, guardar y usar **Solicitar pago y bloquear uso**. Un precio editado no altera cobros ya emitidos.
+
 ## Cambio de dominio — 1.1.1
 
 El servidor usa `https://licencias.colbert2027.shop`. Instalar la actualización sobre el teléfono propietario existente y tocar **Encender servidor**. Los clientes SOBOCE y FRIGOR 1.8.1 cambian su dirección al abrirse y conservan el contrato, la clave pública fijada y el vencimiento del permiso. No se necesita volver a vincular ni borrar datos. Restaurar un respaldo anterior en una instalación vacía también aplica la migración del dominio. La base sigue en el teléfono: el DNS por sí solo no enciende el servidor.

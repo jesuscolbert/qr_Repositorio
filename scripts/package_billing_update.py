@@ -21,9 +21,10 @@ def main():
 Actualizar sobre la versión anterior de Colbert Cobros en el mismo teléfono servidor, sin desinstalar ni borrar datos.
 Abrir y confirmar el PIN/patrón del teléfono. Aparecerá FRIGOR como contrato separado.
 Conserva la clave de firma del servidor, los contratos existentes, precios, pagos y comprobantes.
-FRIGOR empieza sin cobro; puedes definir su precio/frecuencia y activar Cobrar o Suspender.
+Un contrato FRIGOR nuevo empieza sin cobro; uno existente conserva su estado.
+Puedes elegir frecuencia Mensual o Diaria y el monto de cada empresa; puedes definir su precio/frecuencia y activar Cobrar o Suspender.
 Tocar Encender servidor; ahora usa https://licencias.colbert2027.shop.
-Mantener el servidor con internet antes de validar por primera vez FRIGOR o SOBOCE 1.8.1.
+Mantener el servidor con internet antes de validar por primera vez FRIGOR o SOBOCE 1.9.0.
 No instalar en los teléfonos de los clientes ni compartir: esta APK incluye el acceso privado del servidor.
 ''',encoding='utf-8')
     print(json.dumps(result))

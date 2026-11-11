@@ -10,6 +10,7 @@ import java.util.concurrent.*;
 
 public final class PeerService extends Service {
     static volatile PeerEngine engine;
+    static volatile boolean running;
     static volatile String failure="";
     static final TunnelHealth health=new TunnelHealth();
     private final ScheduledExecutorService tasks=Executors.newSingleThreadScheduledExecutor();
@@ -19,11 +20,11 @@ public final class PeerService extends Service {
     private PowerManager.WakeLock awake;
     private volatile boolean stopped;
     @Override public void onCreate(){
-        super.onCreate();failure="";
+        super.onCreate();running=true;failure="";
         NotificationManager manager=getSystemService(NotificationManager.class);
         manager.createNotificationChannel(new NotificationChannel("peer-network","Red del comedor",NotificationManager.IMPORTANCE_LOW));
         PendingIntent open=PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class),PendingIntent.FLAG_IMMUTABLE);
-        startForeground(41,new Notification.Builder(this,"peer-network").setSmallIcon(bo.soboce.comedor.R.drawable.ic_launcher).setContentTitle(getString(R.string.organization_name)+" · Red de teléfonos activa").setContentText("Mantiene y sincroniza el registro del comedor.").setContentIntent(open).setOngoing(true).build());
+        startForeground(41,new Notification.Builder(this,"peer-network").setSmallIcon(bo.soboce.comedor.R.drawable.ic_launcher).setContentTitle(Companies.name(this)+" · Red de teléfonos activa").setContentText("Mantiene y sincroniza el registro del comedor.").setContentIntent(open).setOngoing(true).build());
         awake=getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,getPackageName()+":peer-network");
         awake.setReferenceCounted(false);
         tasks.execute(()->{
@@ -68,5 +69,5 @@ public final class PeerService extends Service {
     }
     @Override public int onStartCommand(Intent intent,int flags,int id){return START_NOT_STICKY;}
     @Override public IBinder onBind(Intent intent){return null;}
-    @Override public synchronized void onDestroy(){stopped=true;tasks.shutdownNow();leaseTasks.shutdownNow();licenseTasks.shutdownNow();Process p=tunnel;if(p!=null)p.destroyForcibly();PeerEngine e=engine;engine=null;if(e!=null)e.close();if(awake!=null&&awake.isHeld())awake.release();super.onDestroy();}
+    @Override public synchronized void onDestroy(){stopped=true;tasks.shutdownNow();leaseTasks.shutdownNow();licenseTasks.shutdownNow();Process p=tunnel;if(p!=null)p.destroyForcibly();PeerEngine e=engine;engine=null;if(e!=null)e.close();if(awake!=null&&awake.isHeld())awake.release();running=false;super.onDestroy();}
 }

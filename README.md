@@ -1,5 +1,17 @@
 # SOBOCE Comedor
 
+## Empresas y plantas en una misma app — 1.9.0
+
+**Menú → Cambiar empresa** o el nombre de la empresa en la barra superior permite pasar entre SOBOCE y FRIGOR. Inicio muestra todas las plantas de la empresa elegida. **Nuevo trabajador** incorpora su propio selector de planta para registrar el carnet y nombre opcional, y generar el QR. El instalador privado autoriza la gestión de todas las plantas de ambas empresas; no concede acceso a la administración de Colbert Cobros.
+
+Cada empresa conserva una base de datos, perfil, operaciones pendientes y licencia independientes. Un QR de una empresa se rechaza en la otra. Al cambiar se detiene el servicio anterior, se conserva su historial y se abre la red de la empresa seleccionada. **Se sincroniza una empresa a la vez**; abrir cada empresa con internet permite recibir sus registros. Una entrega pendiente debe comprobarse antes de cambiar.
+
+Colbert Cobros mantiene un contrato por empresa y aplicación. El propietario decide el importe y la frecuencia **mensual o diaria**, solicita pagos, revisa comprobantes y habilita o suspende. Un permiso de SOBOCE no habilita FRIGOR ni al revés. Se conserva el límite sin conexión de 24 horas, sin superar el período pagado.
+
+Para conservar los datos Android existentes se mantienen dos variantes de actualización, SOBOCE y FRIGOR: **ambas incluyen el mismo selector y las dos empresas**. Instalar la variante correspondiente sobre la aplicación que ya existe, sin desinstalar. La variante SOBOCE sirve para instalaciones nuevas. Android no copia automáticamente la base privada de otra aplicación: el historial de la segunda empresa llega al sincronizar con un teléfono que ya lo tenga. No copiar archivos JSON ni bases de datos.
+
+El empaquetador incorpora `companies.json` únicamente al instalador privado local. El repositorio y los artefactos base de GitHub no contienen padrones ni credenciales. Los coordinadores y túneles de ambas empresas siguen separados y usan el dominio nuevo.
+
 ## Dominio nuevo — comedores 1.8.1 y Colbert Cobros 1.1.1
 
 Las direcciones activas son `https://comedor.colbert2027.shop`, `https://frigor.colbert2027.shop` y `https://licencias.colbert2027.shop`. Los tres registros DNS apuntan a los túneles existentes. Para que respondan, sus conectores deben estar funcionando en los teléfonos.
