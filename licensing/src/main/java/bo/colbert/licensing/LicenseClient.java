@@ -19,10 +19,11 @@ public final class LicenseClient {
  public LicenseClient(Context c,boolean required,String expectedProduct){
   context=c.getApplicationContext();vault=new SecretStore(context);
   try{
-   String saved=vault.get("clientConfig");
-   if(!saved.isEmpty())config=new JSONObject(saved);
-   else try(InputStream in=context.getAssets().open("license-client.json")){config=new JSONObject(new String(read(in,32768),StandardCharsets.UTF_8));vault.put("clientConfig",config.toString());}catch(FileNotFoundException absent){config=null;}
-   if(config!=null){validateConfig(config);LicenseProtocol.require(expectedProduct.isEmpty()||expectedProduct.equals(config.getString("productId")),"La licencia pertenece a otra aplicación.");}
+   String saved=vault.get("clientConfig");JSONObject bundled=null;
+   try(InputStream in=context.getAssets().open("license-client.json")){bundled=new JSONObject(new String(read(in,32768),StandardCharsets.UTF_8));}catch(FileNotFoundException absent){/* Some library integrations configure credentials separately. */}
+   if(!saved.isEmpty()){config=new JSONObject(saved);if(bundled!=null)config=EndpointMigration.license(config,bundled);}
+   else config=bundled;
+   if(config!=null){validateConfig(config);LicenseProtocol.require(expectedProduct.isEmpty()||expectedProduct.equals(config.getString("productId")),"La licencia pertenece a otra aplicación.");if(!config.toString().equals(saved))vault.put("clientConfig",config.toString());}
    else if(required)broken=true;
   }catch(Exception e){broken=true;}
  }

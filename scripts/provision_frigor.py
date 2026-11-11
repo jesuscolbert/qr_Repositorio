@@ -1,5 +1,6 @@
 """Provision FRIGOR separately from SOBOCE. Never print or publish bundle contents."""
 from pathlib import Path
+from urllib.parse import urlparse
 import argparse
 import hashlib
 import json
@@ -35,16 +36,16 @@ def main():
         manifest=encode(dict(installation='frigor-'+secrets.token_hex(16),nodes=nodes,
                              seedHash=hashlib.sha256(seed.encode()).hexdigest()))
         bundle=dict(format='SOBOCE-SHARED-BUNDLE-1',manifest=manifest,seed=seed,
-                    networkKey=secrets.token_hex(32),url='https://frigor.colbertconsorcio.shop',coordinator='')
+                    networkKey=secrets.token_hex(32),url='https://frigor.colbert2027.shop',coordinator='')
         path.write_text(encode(bundle),encoding='utf-8')
-    cert=ROOT/'config/cert.pem'
+    cert=Path.home()/'.cloudflared/cert.pem'
     creds=DEST/'tunnel.json'
     exe=executable()
     if not creds.exists():
         run(exe,'tunnel','--origincert',cert,'--credentials-file',creds,'create','frigor-comedor-compartido')
     bundle['tunnel']=json.loads(creds.read_text(encoding='utf-8'))
     if not bundle.get('dnsReady'):
-        run(exe,'tunnel','--origincert',cert,'route','dns',bundle['tunnel']['TunnelID'],'frigor.colbertconsorcio.shop')
+        run(exe,'tunnel','--origincert',cert,'route','dns',bundle['tunnel']['TunnelID'],urlparse(bundle['url']).hostname)
         bundle['dnsReady']=True
     if args.coordinator:
         bundle['coordinator']=args.coordinator.rstrip('/')

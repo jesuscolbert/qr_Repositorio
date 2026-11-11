@@ -18,7 +18,19 @@ final class SharedSetup {
     static void apply(Vault vault,String asset) throws Exception {
         JSONObject bundle=new JSONObject(asset);PeerConfig.require(bundle.getString("format").equals("SOBOCE-SHARED-BUNDLE-1"),"Instalador incompatible.");
         PeerConfig old=vault.get("peerConfig").isEmpty()?null:new PeerConfig(vault.get("peerConfig"));
-        if(old!=null){PeerConfig.require(old.cluster.equals(PeerConfig.hash(bundle.getString("manifest"))),"Conserva tus datos: este instalador pertenece a otra red.");if(old.shared){PeerConfig.require(old.raw.getString("networkKey").equals(bundle.getString("networkKey")),"La clave de red cambió; se requiere una migración.");return;}}
+        if(old!=null){
+            PeerConfig.require(old.cluster.equals(PeerConfig.hash(bundle.getString("manifest"))),"Conserva tus datos: este instalador pertenece a otra red.");
+            if(old.shared){
+                for(String field:new String[]{"networkKey","seed","coordinator"})PeerConfig.require(old.raw.getString(field).equals(bundle.getString(field)),"Esta actualización cambia la identidad de la red. Conserva los datos.");
+                for(String field:new String[]{"TunnelID","AccountTag","TunnelSecret"})PeerConfig.require(old.raw.getJSONObject("tunnel").getString(field).equals(bundle.getJSONObject("tunnel").getString(field)),"El túnel incluido pertenece a otra red.");
+                JSONObject migrated=bo.colbert.licensing.EndpointMigration.merge(old.raw,bundle);new PeerConfig(migrated.toString());
+                if(!migrated.getString("url").equals(old.raw.getString("url"))||migrated.optLong("endpointRevision")!=old.raw.optLong("endpointRevision")){
+                    PeerConfig.require(PeerService.engine==null,"Cierra completamente la app y vuelve a abrirla para actualizar la dirección de la red.");
+                    vault.put("peerConfig",migrated.toString());
+                }
+                return;
+            }
+        }
         PeerConfig.require(PeerService.engine==null,"Cierra completamente la app y vuelve a abrirla para actualizar la red.");
         String device=vault.get("sharedDevice");if(device.isEmpty()){device=PeerConfig.random();vault.put("sharedDevice",device);}
         JSONObject op=old==null?new JSONObject().put("name","Encargado "+device.substring(0,6)).put("plant",new JSONObject(bundle.getString("seed")).getJSONArray("plants").getString(0)).put("role","encargado"):old.operator(old.node);

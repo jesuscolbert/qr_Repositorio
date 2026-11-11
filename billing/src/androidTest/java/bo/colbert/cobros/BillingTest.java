@@ -19,6 +19,16 @@ import bo.colbert.licensing.*;
 
 @RunWith(AndroidJUnit4.class)
 public class BillingTest {
+ @Test public void ownerDomainMigrationPreservesPaymentsReceiptsAndSigningIdentity()throws Exception{
+  SecretStore vault=new SecretStore(context);String[] keys={"token:tenant-one","token:frigor-upgrade-test","signingKey"};String[] saved=new String[keys.length];for(int i=0;i<keys.length;i++)saved[i]=vault.get(keys[i]);
+  try{
+   for(String key:keys)vault.put(key,"");vault.put("signingKey","existing-signing-identity");JSONObject old=bundled(LicenseProtocol.random());BundledContracts.apply(db,vault,old,old,now);charge("month");upload();String before=db.exportData().toString();
+   JSONObject next=new JSONObject(old.toString()).put("url","https://billing.new.example.com").put("endpointRevision",1).put("previousUrls",new JSONArray().put(old.getString("url")));
+   JSONObject migrated=BundledContracts.apply(db,vault,old,next,now+1);assertEquals(next.getString("url"),migrated.getString("url"));assertEquals(before,db.exportData().toString());assertEquals("existing-signing-identity",vault.get("signingKey"));assertFalse(status().getBoolean("allowed"));assertEquals(1,db.pending().length());
+   assertEquals(migrated.toString(),BundledContracts.apply(db,vault,migrated,old,now+2).toString());
+   JSONObject invalid=new JSONObject(next.toString()).put("previousUrls",new JSONArray().put("https://unknown.example.com"));reject(()->BundledContracts.apply(db,vault,old,invalid,now+3));assertEquals(before,db.exportData().toString());
+  }finally{for(int i=0;i<keys.length;i++)vault.put(keys[i],saved[i]);}
+ }
  JSONObject bundled(String extraToken)throws Exception{
   JSONObject old=new JSONObject().put("id","tenant-one").put("customer","Cliente de prueba").put("productId","comedor").put("productName","Comedor").put("token",token);
   JSONObject extra=new JSONObject().put("id","frigor-upgrade-test").put("customer","FRIGOR").put("productId","frigor-comedor").put("productName","FRIGOR Comedor").put("token",extraToken);

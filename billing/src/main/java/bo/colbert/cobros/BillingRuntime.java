@@ -37,6 +37,6 @@ final class BillingRuntime {
   LicenseProtocol.require(b.getString("format").equals("COLBERT-BACKUP-1")&&db.contracts().length()==0,"Respaldo incompatible o instalación no vacía.");
   JSONObject key=b.getJSONObject("signingKey"),cfg=b.getJSONObject("serverConfig"),tokens=b.getJSONObject("tokens");loadKey(key);
   // Save identity before data; an interrupted restore can be repeated while the database is empty.
-  vault.put("signingKey",key.toString());vault.put("serverConfig",cfg.toString());for(java.util.Iterator<String> it=tokens.keys();it.hasNext();){String id=it.next();vault.put("token:"+id,tokens.getString(id));}db.restore(b.getJSONObject("database"));config=cfg;
+  vault.put("signingKey",key.toString());vault.put("serverConfig",cfg.toString());for(java.util.Iterator<String> it=tokens.keys();it.hasNext();){String id=it.next();vault.put("token:"+id,tokens.getString(id));}db.restore(b.getJSONObject("database"));config=cfg;refreshBundled();
  }
 }

@@ -10,6 +10,26 @@ import java.util.Base64;
 
 @RunWith(AndroidJUnit4.class)
 public class LicenseTest {
+ @Test public void endpointMigrationRequiresTheSameContractAndAnExplicitForwardRevision()throws Exception{
+  JSONObject old=new JSONObject().put("version",1).put("url","https://old.example.com").put("contractId","customer").put("productId","product").put("token",LicenseProtocol.random());
+  JSONObject next=new JSONObject(old.toString()).put("url","https://new.example.com").put("endpointRevision",1).put("previousUrls",new JSONArray().put(old.getString("url")));
+  JSONObject migrated=EndpointMigration.license(old,next);assertEquals(next.getString("url"),migrated.getString("url"));assertEquals(old.getString("token"),migrated.getString("token"));assertEquals(1,migrated.getLong("endpointRevision"));
+  assertEquals(migrated.toString(),EndpointMigration.license(migrated,old).toString());assertEquals(migrated.toString(),EndpointMigration.license(migrated,next).toString());
+  for(String field:new String[]{"token","contractId","productId"}){JSONObject other=new JSONObject(next.toString()).put(field,field.equals("token")?LicenseProtocol.random():"other");rejects(()->EndpointMigration.license(old,other));}
+  rejects(()->EndpointMigration.license(old,new JSONObject(next.toString()).put("previousUrls",new JSONArray().put("https://another.example.com"))));
+  rejects(()->EndpointMigration.license(old,new JSONObject(next.toString()).put("endpointRevision",0)));
+  rejects(()->EndpointMigration.license(old,new JSONObject(next.toString()).put("url","http://new.example.com")));
+ }
+ @Test public void domainChangeKeepsPinnedKeyCachedDeadlineAndPendingReceipt()throws Exception{
+  android.content.Context c=androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().getTargetContext();SecretStore vault=new SecretStore(c);String[] keys={"clientConfig","serverKey","permit","pendingReceipt"};String[] saved=new String[keys.length];for(int i=0;i<keys.length;i++)saved[i]=vault.get(keys[i]);
+  try{
+   JSONObject old=new JSONObject().put("version",1).put("url","https://old.example.com").put("contractId","customer").put("productId","product").put("token",LicenseProtocol.random());vault.put("clientConfig",old.toString());vault.put("serverKey",pub);
+   String cached=new JSONObject().put("envelope",signed()).put("elapsed",android.os.SystemClock.elapsedRealtime()).put("boot",android.provider.Settings.Global.getInt(c.getContentResolver(),"boot_count",-1)).toString();vault.put("permit",cached);vault.put("pendingReceipt","saved-request");
+   JSONObject next=new JSONObject(old.toString()).put("url","https://new.example.com").put("endpointRevision",1).put("previousUrls",new JSONArray().put(old.getString("url")));vault.put("clientConfig",EndpointMigration.license(old,next).toString());
+   assertTrue(new LicenseClient(c,true,"product").allowed());assertEquals(pub,vault.get("serverKey"));assertEquals(cached,vault.get("permit"));assertEquals("saved-request",vault.get("pendingReceipt"));
+   claims.put("allowed",false).put("expiresAt",now);vault.put("permit",new JSONObject(cached).put("envelope",signed()).toString());assertFalse(new LicenseClient(c,true,"product").allowed());
+  }finally{for(int i=0;i<keys.length;i++)vault.put(keys[i],saved[i]);}
+ }
  @Test public void requiredProductsFailClosedWithoutConfigurationOrWithAnotherProduct()throws Exception{
   android.content.Context c=androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().getTargetContext();SecretStore vault=new SecretStore(c);String previous=vault.get("clientConfig");
   try{

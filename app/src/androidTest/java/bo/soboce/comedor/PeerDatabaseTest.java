@@ -17,6 +17,26 @@ import static org.junit.Assert.*;
 
 @RunWith(AndroidJUnit4.class)
 public class PeerDatabaseTest {
+    @Test public void domainUpdatePreservesPhoneWorkerQrMealsAndPendingRequest()throws Exception{
+        Vault vault=new Vault(context);String[] keys={"peerConfig","mode","pending","sharedDevice"};String[] saved=new String[keys.length];for(int i=0;i<keys.length;i++)saved[i]=vault.get(keys[i]);
+        PeerConfig before=sharedConfig(0,"b".repeat(64));context.deleteDatabase("domain-migration.db");long now=System.currentTimeMillis();
+        try{
+            String qr;try(PeerDatabase local=new PeerDatabase(context,before,"domain-migration.db")){
+                qr=PeerCards.request(local,before,enrollmentRequest("5301117","Trabajador conservado"),now).getString("qr");
+                assertEquals("accepted",new SharedLedger(local,before).scan(sharedRequest(0,"almuerzo").put("qr",qr),before.operator(-1),now).getString("status"));
+            }
+            vault.put("peerConfig",before.raw.toString());vault.put("sharedDevice",before.device);vault.put("mode","p2p");String pending=sharedRequest(0,"cena").put("qr",qr).toString();vault.put("pending",pending);
+            JSONObject original=new JSONObject(before.raw.toString()).put("format","SOBOCE-SHARED-BUNDLE-1"),bundle=new JSONObject(original.toString()).put("url","https://comedor.new.example.com").put("endpointRevision",1).put("previousUrls",new JSONArray().put(before.raw.getString("url")));
+            SharedSetup.apply(vault,bundle.toString());PeerConfig after=new PeerConfig(vault.get("peerConfig"));
+            assertEquals("https://comedor.new.example.com",after.raw.getString("url"));assertEquals(before.device,after.device);assertEquals(before.cluster,after.cluster);assertEquals(before.operator(-1).toString(),after.operator(-1).toString());assertEquals(before.raw.getString("coordinator"),after.raw.getString("coordinator"));assertEquals(pending,vault.get("pending"));assertEquals(before.device,vault.get("sharedDevice"));
+            try(PeerDatabase local=new PeerDatabase(context,after,"domain-migration.db")){
+                assertEquals(2,local.rows("people").size());assertEquals("CI-5301117",PeerCards.resolve(local,after,qr,now).getString("id"));assertEquals(1,new OfflineLedger(local,after).records().size());
+                assertEquals("duplicate",new SharedLedger(local,after).scan(sharedRequest(0,"dieta").put("qr",qr),after.operator(-1),now).getString("status"));
+            }
+            String migrated=vault.get("peerConfig");SharedSetup.apply(vault,original.toString());assertEquals(migrated,vault.get("peerConfig"));SharedSetup.apply(vault,bundle.toString());assertEquals(migrated,vault.get("peerConfig"));
+            JSONObject foreign=new JSONObject(bundle.toString());foreign.getJSONObject("tunnel").put("TunnelSecret","different-key");try{SharedSetup.apply(vault,foreign.toString());fail("Tunnel identity replaced");}catch(IllegalArgumentException expected){}assertEquals(migrated,vault.get("peerConfig"));
+        }finally{context.deleteDatabase("domain-migration.db");for(int i=0;i<keys.length;i++){if(saved[i].isEmpty())vault.remove(keys[i]);else vault.put(keys[i],saved[i]);}}
+    }
     JSONObject enrollmentRequest(String ci,String name)throws Exception{return new JSONObject().put("action","worker").put("document",ci).put("name",name).put("plant","Planta 0");}
     @Test public void workersRegisterAloneAndPortableCardsReplicateWithoutSkippingMissingRegistrations()throws Exception{
         PeerConfig a=sharedConfig(0,"b".repeat(64)),b=sharedConfig(0,"c".repeat(64));long now=System.currentTimeMillis();

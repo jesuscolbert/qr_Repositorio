@@ -1,5 +1,15 @@
 # SOBOCE Comedor
 
+## Dominio nuevo — comedores 1.8.1 y Colbert Cobros 1.1.1
+
+Las direcciones activas son `https://comedor.colbert2027.shop`, `https://frigor.colbert2027.shop` y `https://licencias.colbert2027.shop`. Los tres registros DNS apuntan a los túneles existentes. Para que respondan, sus conectores deben estar funcionando en los teléfonos.
+
+Actualizar primero Colbert Cobros en el teléfono del propietario, abrirlo y tocar **Encender servidor**. Después actualizar SOBOCE y FRIGOR en sus teléfonos correspondientes. Instalar encima de la versión anterior, sin desinstalar ni borrar datos. Las configuraciones están incluidas en los instaladores privados: no hay que importar JSON.
+
+La actualización cambia la URL guardada únicamente cuando el instalador firmado incluye el origen anterior y una revisión superior. Verifica que la red, túnel y contrato mantienen su identidad. Conserva usuarios, QR, entregas, solicitudes pendientes, precios, pagos y clave de firma. El cambio de dominio no amplía el permiso de 24 horas ni el período pagado. Los manifiestos antiguos son parte de la identidad criptográfica y **no se sustituyen sus URL históricas**.
+
+Las APK base se compilan y prueban en GitHub; los scripts `package_soboce_update.py`, `package_frigor.py` y `package_billing_update.py` añaden la configuración privada localmente y verifican la misma firma de actualización. Nunca publicar esos instaladores privados. Los scripts de provisión usan el certificado de la zona autorizada en `~/.cloudflared/cert.pem` y no migran automáticamente una instalación existente.
+
 ## Menú, altas y permisos FRIGOR — 1.8.0
 
 El botón **Menú** queda fijo en la parte superior y abre un panel lateral. **Iniciar escaneo** permanece visible abajo en Inicio, incluso al desplazar el contenido en una pantalla pequeña. Inicio conserva la comida seleccionada y el acceso al reporte diario. Trabajadores, visitantes, reportes, red, pagos y ajustes se abren desde el panel.
@@ -54,7 +64,7 @@ La misma APK privada se instala en todos los teléfonos, encima de la versión a
 
 ### Una URL y relevo automático
 
-Todos usan `https://comedor.colbertconsorcio.shop`. El primer teléfono que obtiene el permiso del coordinador abre el túnel. Los demás envían y reciben páginas de registros con ese servidor cada cinco segundos. Cuando desaparece, otro obtiene el permiso y usa el mismo túnel y URL. La elección puede tardar unos 30 segundos más la reconexión del túnel. Si el servidor conserva internet pero su túnel no responde, cede el puesto después del período de comprobación.
+Desde 1.8.1 todos usan `https://comedor.colbert2027.shop`. El primer teléfono que obtiene el permiso del coordinador abre el túnel. Los demás envían y reciben páginas de registros con ese servidor cada cinco segundos. Cuando desaparece, otro obtiene el permiso y usa el mismo túnel y URL. La elección puede tardar unos 30 segundos más la reconexión del túnel. Si el servidor conserva internet pero su túnel no responde, cede el puesto después del período de comprobación.
 
 El coordinador es un Worker con un Durable Object SQLite de Cloudflare: guarda solo identidad temporal del servidor, vencimiento y número de relevo, **ningún consumo ni padrón**. Es un servicio externo necesario para arbitrar la URL única; la PC no participa durante el servicio. Solo quien tiene un permiso vigente puede responder; un reloj monotónico y un margen de seguridad detienen el receptor anterior. Los clientes rechazan respuestas de otro relevo. No se confunde una réplica de Cloudflare Tunnel con una copia de la base de datos.
 

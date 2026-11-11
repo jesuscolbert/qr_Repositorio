@@ -2,7 +2,7 @@ plugins { id 'com.android.application' }
 android {
  namespace 'bo.colbert.cobros'
  compileSdk 35
- defaultConfig { applicationId 'bo.colbert.cobros'; minSdk 26; targetSdk 35; versionCode 2; versionName '1.1.0'; testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner' }
+ defaultConfig { applicationId 'bo.colbert.cobros'; minSdk 26; targetSdk 35; versionCode 3; versionName '1.1.1'; testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner' }
  packaging { jniLibs { useLegacyPackaging = true; keepDebugSymbols += ['**/libcloudflared.so'] } }
  sourceSets.main.jniLibs.srcDirs = [rootProject.file('app/src/main/jniLibs')]
  def signingFile=rootProject.file('private/signing.properties')

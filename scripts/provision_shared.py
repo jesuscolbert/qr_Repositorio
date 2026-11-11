@@ -1,5 +1,6 @@
 """Prepare the one private network bundle. Never upload it or print its secrets."""
 from pathlib import Path
+from urllib.parse import urlparse
 import argparse, json, secrets
 from provision_peers import executable, run, encode
 
@@ -20,14 +21,14 @@ def main():
     if path.exists():bundle=json.loads(path.read_text(encoding='utf-8'))
     else:
         bundle={'format':'SOBOCE-SHARED-BUNDLE-1','manifest':old['manifest'],'seed':old['seed'],
-                'networkKey':secrets.token_hex(32),'url':'https://comedor.colbertconsorcio.shop','coordinator':''}
+                'networkKey':secrets.token_hex(32),'url':'https://comedor.colbert2027.shop','coordinator':''}
         path.write_text(encode(bundle),encoding='utf-8')
     assert bundle['manifest']==old['manifest'] and bundle['seed']==old['seed']
-    cert=ROOT/'config/cert.pem';exe=executable();credentials=DEST/'tunnel.json'
+    cert=Path.home()/'.cloudflared/cert.pem';exe=executable();credentials=DEST/'tunnel.json'
     if not credentials.exists():run(exe,'tunnel','--origincert',cert,'--credentials-file',credentials,'create','soboce-comedor-compartido')
     bundle['tunnel']=json.loads(credentials.read_text(encoding='utf-8'))
     if not bundle.get('dnsReady'):
-        run(exe,'tunnel','--origincert',cert,'route','dns',bundle['tunnel']['TunnelID'],'comedor.colbertconsorcio.shop')
+        run(exe,'tunnel','--origincert',cert,'route','dns',bundle['tunnel']['TunnelID'],urlparse(bundle['url']).hostname)
         bundle['dnsReady']=True
     if args.coordinator:bundle['coordinator']=args.coordinator.rstrip('/')
     path.write_text(encode(bundle),encoding='utf-8')

@@ -12,25 +12,26 @@ def main():
     args=p.parse_args()
     bundle=ROOT/'private/frigor/network/bundle.json'
     cfg=json.loads(bundle.read_text(encoding='utf-8'))
-    assert cfg['coordinator'].startswith('https://frigor-') and cfg['url']=='https://frigor.colbertconsorcio.shop'
+    assert cfg['coordinator'].startswith('https://frigor-') and cfg['url']=='https://frigor.colbert2027.shop'
     assert json.loads(cfg['seed'])['plants']==['FRIGOR']
     info=run([ROOT/'.tools/android-sdk/build-tools/34.0.0/aapt.exe','dump','badging',args.apk])
     assert "name='bo.soboce.comedor.frigor'" in info and "application-label:'FRIGOR Comedor'" in info
-    assert "versionCode='10'" in info and "versionName='1.8.0-frigor'" in info
+    assert "versionCode='11'" in info and "versionName='1.8.1-frigor'" in info
     license_file=ROOT/'private/billing-network/client-frigor.json'
     license_config=json.loads(license_file.read_text(encoding='utf-8'))
     assert license_config['productId']=='frigor-comedor' and license_config['contractId']=='frigor-comedor'
     assert not {'tunnel','privateKey','contracts'}.intersection(license_config)
-    target=ROOT/'private/FRIGOR-1.8.0'
-    result=package(args.apk,target/'FRIGOR-Comedor-1.8.0-Todos.apk',{'assets/comedor-shared.json':bundle,'assets/license-client.json':license_file})
+    target=ROOT/'private/FRIGOR-1.8.1'
+    result=package(args.apk,target/'FRIGOR-Comedor-1.8.1-Todos.apk',{'assets/comedor-shared.json':bundle,'assets/license-client.json':license_file})
     (target/'verificacion.json').write_text(json.dumps(result,indent=2)+'\n',encoding='utf-8')
-    (target/'LEEME.txt').write_text('''FRIGOR COMEDOR — 1.8.0
+    (target/'LEEME.txt').write_text('''FRIGOR COMEDOR — 1.8.1
 
-Primero actualizar Colbert Cobros a 1.1.0 en el teléfono de Jesús y abrirlo con su PIN.
-Después instalar FRIGOR-Comedor-1.8.0-Todos.apk en TODOS los teléfonos de encargados.
+Las conexiones usan colbert2027.shop y conservan usuarios, QR y consumos.
+Primero actualizar Colbert Cobros a 1.1.1 en el teléfono de Jesús y abrirlo con su PIN.
+Después instalar FRIGOR-Comedor-1.8.1-Todos.apk en TODOS los teléfonos de encargados.
 Instalar encima de las versiones anteriores, sin desinstalar ni borrar sus datos.
 La primera validación de permiso necesita internet y el servidor Colbert Cobros encendido.
-Abrir FRIGOR Comedor y escribir el nombre del encargado. El padrón y la red ya están incluidos.
+Abrir FRIGOR Comedor. Solo una instalación nueva pide el nombre del encargado. El padrón y la red ya están incluidos.
 La app tiene almacenamiento, conexión y credenciales separados de SOBOCE. Pueden estar instaladas las dos.
 El botón Menú permanece arriba y despliega la navegación lateral.
 Menú > Nuevo trabajador: escribir carnet y nombre opcional, guardar y compartir su QR.
