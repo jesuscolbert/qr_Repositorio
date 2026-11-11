@@ -60,7 +60,8 @@ public class MainActivity extends Activity {
  int dp(int v){return (int)(v*getResources().getDisplayMetrics().density);}
  void screen(String title,String sub){
   stopScanner();frame=Design.column(this);frame.setBackgroundColor(Design.INK);
-  getWindow().getDecorView().setSystemUiVisibility(getWindow().getDecorView().getSystemUiVisibility()&~View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+  getWindow().setStatusBarColor(Design.INK);getWindow().setNavigationBarColor(Design.INK);
+  getWindow().getDecorView().setSystemUiVisibility(getWindow().getDecorView().getSystemUiVisibility()&~(View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR|View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR));
   LinearLayout bar=Design.row(this);bar.setPadding(dp(12),dp(5),dp(18),dp(5));bar.setBackgroundColor(Design.INK);
   Button menu=Design.button(this,"☰  Menú",Design.INK,Color.WHITE,this::openMenu);menu.setContentDescription("Abrir menú de navegación");bar.addView(menu,new LinearLayout.LayoutParams(dp(112),dp(50)));
   TextView brand=Design.text(this,companyName()+"  /  COMEDOR  ▾",12,Color.WHITE,true);brand.setGravity(Gravity.END|Gravity.CENTER_VERTICAL);brand.setContentDescription("Empresa actual: "+companyName()+". Cambiar empresa");brand.setOnClickListener(v->{if(Companies.enabled(this))chooseCompany();});bar.addView(brand,new LinearLayout.LayoutParams(0,dp(50),1));frame.addView(bar);
