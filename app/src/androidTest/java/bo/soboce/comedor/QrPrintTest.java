@@ -27,7 +27,11 @@ public class QrPrintTest {
         folder=new File(fixture.context.getExternalFilesDir(null),"pdf-tests");assertTrue(folder.isDirectory()||folder.mkdirs());
     }
     @After public void cleanup()throws Exception {
-        try{if(folder!=null){PeerDatabaseTest ui=new PeerDatabaseTest();ui.shellUi("mkdir -p /sdcard/Download/soboce-pdf");ui.shellUi("cp -r '"+folder.getAbsolutePath()+"/.' /sdcard/Download/soboce-pdf/");}}
+        try{if(folder!=null){PeerDatabaseTest ui=new PeerDatabaseTest();ui.shellUi("mkdir -p /sdcard/Download/soboce-pdf");for(File file:Objects.requireNonNull(folder.listFiles())){
+            ParcelFileDescriptor[] pipe=InstrumentationRegistry.getInstrumentation().getUiAutomation().executeShellCommandRw("cat > /sdcard/Download/soboce-pdf/"+file.getName());
+            try(InputStream source=new FileInputStream(file);OutputStream out=new ParcelFileDescriptor.AutoCloseOutputStream(pipe[1])){source.transferTo(out);}
+            try(InputStream result=new ParcelFileDescriptor.AutoCloseInputStream(pipe[0])){result.readAllBytes();}
+        }}}
         finally{if(db!=null)db.close();if(fixture!=null)fixture.cleanup();}
     }
     @Test public void allPaperAndQrSizesRenderReadableCodesAtPhysicalSizeWithoutRecordingMeals()throws Exception {
@@ -41,7 +45,7 @@ public class QrPrintTest {
                 assertEquals(QrPrintDocument.pages(groups,layout),renderer.getPageCount());int index=0;
                 for(QrPrintDocument.Group group:groups)for(int offset=0;offset<group.cards.size();offset+=layout.perPage){
                     JSONArray expected=new JSONArray();try(PdfRenderer.Page page=renderer.openPage(index++)){
-                        assertEquals(paper.width,page.getWidth());assertEquals(paper.height,page.getHeight());float scale=2.5f;
+                        assertEquals(paper.width,page.getWidth());assertEquals(paper.height,page.getHeight());float scale=300f/72; // Standard print rasterization; PDF paths retain arbitrary resolution.
                         Bitmap bitmap=Bitmap.createBitmap(Math.round(paper.width*scale),Math.round(paper.height*scale),Bitmap.Config.ARGB_8888);bitmap.eraseColor(Color.WHITE);Matrix transform=new Matrix();transform.setScale(scale,scale);page.render(bitmap,new Rect(0,0,bitmap.getWidth(),bitmap.getHeight()),transform,PdfRenderer.Page.RENDER_MODE_FOR_PRINT);
                         try{for(int i=0;i<layout.perPage&&offset+i<group.cards.size();i++){
                             RectF r=layout.qrBox(i);assertTrue(r.bottom+QrPrintDocument.CAPTION<paper.height-QrPrintDocument.MARGIN-QrPrintDocument.FOOTER);
