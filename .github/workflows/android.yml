@@ -104,7 +104,7 @@ jobs:
           disable-animations: true
           script: |
             mkdir -p app/build/reports/ui
-            gradle :app:connectedDebugAndroidTest --console=plain || { adb pull /sdcard/Download/soboce-design app/build/reports/ui/; exit 1; }
+            gradle :app:connectedDebugAndroidTest --console=plain || { adb pull /sdcard/Download/soboce-design app/build/reports/ui/; mkdir -p app/build/reports/pdf; adb pull /sdcard/Android/data/bo.soboce.comedor/files/pdf-tests app/build/reports/pdf/; exit 1; }
             gradle :billing:connectedDebugAndroidTest :licensing:connectedDebugAndroidTest --console=plain || { adb pull /sdcard/Download/colbert-billing-design app/build/reports/ui/; exit 1; }
             adb install -r app/build/outputs/apk/pilot/app-pilot.apk
             adb shell am start -W -n bo.soboce.comedor.piloto/bo.soboce.comedor.MainActivity
@@ -114,6 +114,8 @@ jobs:
             adb exec-out screencap -p > app/build/reports/ui/conexion.png
             adb pull /sdcard/Download/soboce-design app/build/reports/ui/
             adb pull /sdcard/Download/colbert-billing-design app/build/reports/ui/
+            mkdir -p app/build/reports/pdf
+            adb pull /sdcard/Android/data/bo.soboce.comedor/files/pdf-tests app/build/reports/pdf/
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -121,6 +123,7 @@ jobs:
           path: |
             app/build/reports/androidTests/
             app/build/reports/ui/
+            app/build/reports/pdf/
             billing/build/reports/androidTests/
             licensing/build/reports/androidTests/
             app/build/reports/lint-results-*

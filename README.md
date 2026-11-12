@@ -1,5 +1,15 @@
 # SOBOCE Comedor
 
+## Credenciales PDF para impresión — 1.10.0
+
+**Menú → Imprimir QR en PDF** o **Trabajadores y QR → Imprimir QR de esta planta** permite generar un lote de trabajadores activos de la empresa actual. Elegir una planta o todas separadas, QR de **7 × 7 cm** u **8 × 8 cm**, y hoja **Carta (21,59 × 27,94 cm)**, **Oficio (21,59 × 33,02 cm)** o **Legal/Oficio (21,59 × 35,56 cm)**. Se muestran las tarjetas que caben por hoja antes de generar. Cada planta empieza en una página nueva; no se mezclan empresas ni se incluyen visitantes o inactivos.
+
+El tamaño corresponde al cuadrado QR completo con margen blanco; nombre, carnet/SAP y planta van debajo. Los códigos son vectoriales y las líneas punteadas sirven para cortar. Imprimir **al 100% / Tamaño real**, desactivando Ajustar a página. Carta admite 4 QR de ambos tamaños; Oficio admite 6 de 7 cm o 4 de 8 cm; Legal admite 6 de ambos tamaños.
+
+El PDF puede abrirse en un visor, compartirse o guardarse con el selector de archivos Android. El exportador usa la base local: sincronizar previamente para incluir altas de otros teléfonos. Generar o compartir requiere el permiso vigente de esa empresa; no cambia el control de Colbert Cobros. Las tarjetas anteriores permanecen válidas y la exportación no registra comidas. No se regeneran identidades ni se modifican los consumos.
+
+Las pruebas exportan seis PDF con datos ficticios, los rasterizan y vuelven a leer cada QR, verifican el tamaño físico y la separación por plantas, y comprueban un lote de 600 tarjetas. Los PDF de prueba se adjuntan al artefacto de validación de GitHub; no contienen credenciales de producción.
+
 ## Empresas y plantas en una misma app — 1.9.0
 
 **Menú → Cambiar empresa** o el nombre de la empresa en la barra superior permite pasar entre SOBOCE y FRIGOR. Inicio muestra todas las plantas de la empresa elegida. **Nuevo trabajador** incorpora su propio selector de planta para registrar el carnet y nombre opcional, y generar el QR. El instalador privado autoriza la gestión de todas las plantas de ambas empresas; no concede acceso a la administración de Colbert Cobros.
