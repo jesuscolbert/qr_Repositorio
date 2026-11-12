@@ -26,10 +26,13 @@ public class QrPrintTest {
         db.save("people","inactive",new JSONObject().put("id","inactive").put("nombre","Inactivo excluido").put("planta","Planta Norte").put("activo",false));db.save("people","visitor",new JSONObject().put("id","visitor").put("nombre","Visitante excluido").put("planta","Planta Norte").put("activo",true).put("tipo","VISITA"));
         folder=new File(fixture.context.getExternalFilesDir(null),"pdf-tests");assertTrue(folder.isDirectory()||folder.mkdirs());
     }
-    @After public void cleanup(){db.close();fixture.cleanup();}
+    @After public void cleanup()throws Exception {
+        try{if(folder!=null){PeerDatabaseTest ui=new PeerDatabaseTest();ui.shellUi("mkdir -p /sdcard/Download/soboce-pdf");ui.shellUi("cp -r '"+folder.getAbsolutePath()+"/.' /sdcard/Download/soboce-pdf/");}}
+        finally{if(db!=null)db.close();if(fixture!=null)fixture.cleanup();}
+    }
     @Test public void allPaperAndQrSizesRenderReadableCodesAtPhysicalSizeWithoutRecordingMeals()throws Exception {
         List<QrPrintDocument.Group> groups=QrPrintData.snapshot(db,config,license,"",fixture.now);assertEquals(2,groups.size());assertEquals(8,groups.get(0).cards.size());assertEquals(3,groups.get(1).cards.size());assertEquals(0,new OfflineLedger(db,config).records().size());
-        JSONArray manifest=new JSONArray();
+        JSONArray manifest=new JSONArray();List<String> unreadable=new ArrayList<>();
         for(QrPrintDocument.Paper paper:QrPrintDocument.Paper.values())for(int cm:new int[]{7,8}){
             QrPrintDocument.Layout layout=new QrPrintDocument.Layout(paper,cm);assertEquals(cm*72/2.54,layout.qr,.001);assertEquals(paper==QrPrintDocument.Paper.CARTA?4:paper==QrPrintDocument.Paper.OFICIO&&cm==8?4:6,layout.perPage);
             File file=new File(folder,"QR-DEMO-"+paper.name()+"-"+cm+"cm.pdf");QrPrintDocument.write(file,"EMPRESA DE PRUEBA",groups,layout,()->QrPrintData.requirePermission(license));
@@ -39,12 +42,13 @@ public class QrPrintTest {
                 for(QrPrintDocument.Group group:groups)for(int offset=0;offset<group.cards.size();offset+=layout.perPage){
                     JSONArray expected=new JSONArray();try(PdfRenderer.Page page=renderer.openPage(index++)){
                         assertEquals(paper.width,page.getWidth());assertEquals(paper.height,page.getHeight());float scale=2.5f;
-                        Bitmap bitmap=Bitmap.createBitmap(Math.round(paper.width*scale),Math.round(paper.height*scale),Bitmap.Config.ARGB_8888);bitmap.eraseColor(Color.WHITE);page.render(bitmap,null,null,PdfRenderer.Page.RENDER_MODE_FOR_PRINT);
+                        Bitmap bitmap=Bitmap.createBitmap(Math.round(paper.width*scale),Math.round(paper.height*scale),Bitmap.Config.ARGB_8888);bitmap.eraseColor(Color.WHITE);Matrix transform=new Matrix();transform.setScale(scale,scale);page.render(bitmap,new Rect(0,0,bitmap.getWidth(),bitmap.getHeight()),transform,PdfRenderer.Page.RENDER_MODE_FOR_PRINT);
                         try{for(int i=0;i<layout.perPage&&offset+i<group.cards.size();i++){
                             RectF r=layout.qrBox(i);assertTrue(r.bottom+QrPrintDocument.CAPTION<paper.height-QrPrintDocument.MARGIN-QrPrintDocument.FOOTER);
                             int x=Math.round(r.left*scale),y=Math.round(r.top*scale),w=Math.round(r.width()*scale);int[] pixels=new int[w*w];bitmap.getPixels(pixels,0,w,x,y,w,w);
-                            String qr=new MultiFormatReader().decode(new BinaryBitmap(new HybridBinarizer(new RGBLuminanceSource(w,w,pixels))),Collections.singletonMap(DecodeHintType.TRY_HARDER,Boolean.TRUE)).getText();
-                            QrPrintDocument.Card card=group.cards.get(offset+i);assertEquals(card.qr,qr);assertEquals(card.id,PeerCards.resolve(db,config,qr,fixture.now).getString("id"));
+                            QrPrintDocument.Card card=group.cards.get(offset+i);
+                            try{String qr=new MultiFormatReader().decode(new BinaryBitmap(new HybridBinarizer(new RGBLuminanceSource(w,w,pixels))),Collections.singletonMap(DecodeHintType.TRY_HARDER,Boolean.TRUE)).getText();assertEquals(card.qr,qr);assertEquals(card.id,PeerCards.resolve(db,config,qr,fixture.now).getString("id"));}
+                            catch(ReaderException failure){unreadable.add(file.getName()+" page="+index+" card="+card.id);try(OutputStream debug=new FileOutputStream(new File(folder,file.getName()+"-page-"+index+".png"))){bitmap.compress(Bitmap.CompressFormat.PNG,100,debug);}}
                             expected.put(new JSONObject().put("id",card.id).put("identity",card.identity).put("qr",card.qr));
                         }}finally{bitmap.recycle();}
                     }pages.put(new JSONObject().put("plant",group.plant).put("cards",expected));
@@ -53,7 +57,7 @@ public class QrPrintTest {
             manifest.put(new JSONObject().put("file",file.getName()).put("cm",cm).put("width",paper.width).put("height",paper.height).put("perPage",layout.perPage).put("pages",pages));
         }
         try(OutputStream out=new FileOutputStream(new File(folder,"expected.json"))){out.write(manifest.toString(2).getBytes(StandardCharsets.UTF_8));}
-        assertEquals(0,new OfflineLedger(db,config).records().size());
+        assertEquals(0,new OfflineLedger(db,config).records().size());assertTrue("PDF QR decoding failed: "+unreadable,unreadable.isEmpty());
     }
     @Test public void exportHonorsCompanyPlantAndPaymentAndRemovesCancelledOutput()throws Exception {
         List<QrPrintDocument.Group> groups=QrPrintData.snapshot(db,config,license,"Planta Sur",fixture.now);assertEquals(1,groups.size());assertEquals(3,groups.get(0).cards.size());
