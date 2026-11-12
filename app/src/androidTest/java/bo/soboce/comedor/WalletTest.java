@@ -30,6 +30,13 @@ public class WalletTest {
  interface Attempt{void run()throws Exception;}
  static void rejected(Attempt a)throws Exception {try{a.run();fail("Unauthorized operation accepted");}catch(IllegalArgumentException expected){}}
  String activate()throws Exception{return registry.bind(id,pair,0,Companies.license(fixture.context,"soboce"),now);}
+ static JSONObject walletPost(int port,JSONObject request)throws Exception {
+  byte[] body=request.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+  try(java.net.Socket socket=new java.net.Socket("127.0.0.1",port)){
+   socket.setSoTimeout(5000);java.io.OutputStream out=socket.getOutputStream();out.write(("POST /wallet HTTP/1.1\r\nHost: localhost\r\nContent-Length: "+body.length+"\r\n\r\n").getBytes(java.nio.charset.StandardCharsets.US_ASCII));out.write(body);out.flush();
+   String response=new String(socket.getInputStream().readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);if(!response.startsWith("HTTP/1.1 200"))throw new java.io.IOException("Rejected");return new JSONObject(response.substring(response.indexOf("\r\n\r\n")+4));
+  }
+ }
  @Test public void rotatingQrWorksOfflineAndSharesTheSameMealAllowanceWithPaper()throws Exception {
   String cert=activate();remote.offline=true;String first=WalletProtocol.qr(cert,identity.getPrivate(),now),second=WalletProtocol.qr(cert,identity.getPrivate(),now+30000);assertNotEquals(first,second);assertEquals(id,registry.resolve(first,now).getString("id"));assertEquals(id,registry.resolve(second,now+30000).getString("id"));
   assertEquals("accepted",new SharedLedger(db,config).scan(fixture.scan(first,"almuerzo","Planta Norte"),config.operator(-1),now).getString("status"));
@@ -65,13 +72,13 @@ public class WalletTest {
  }
  @Test public void walletHttpRejectsAnonymousRequestsReplaysAndAnOldLeader()throws Exception {
   String cert=activate();new SharedLedger(db,config).scan(fixture.scan(staticQr,"desayuno","Planta Norte"),config.operator(-1),now);
-  try(PeerEngine engine=new PeerEngine(fixture.context,config){@Override WalletRegistry walletRegistry(){return new WalletRegistry(db,config,remote);}}){
-   PeerDatabaseTest helper=new PeerDatabaseTest();helper.elect(new PeerEngine[]{engine},0,1);engine.start();String url="http://127.0.0.1:"+engine.localPort+"/wallet";
-   try{SharedNetwork.http(url,new JSONObject(),null);fail("Anonymous history accepted");}catch(java.io.IOException expected){}
-   JSONObject request=WalletProtocol.historyRequest(cert,identity.getPrivate(),System.currentTimeMillis());assertEquals(1,SharedNetwork.http(url,request,null).getJSONArray("items").length());
-   try{SharedNetwork.http(url,request,null);fail("Replay accepted");}catch(java.io.IOException expected){}
+  try(PeerEngine engine=new PeerEngine(fixture.context,config){@Override WalletRegistry walletRegistry(){return new WalletRegistry(db,config,remote);}@Override public void close(){super.close();db.close();}}){
+   PeerDatabaseTest helper=new PeerDatabaseTest();helper.elect(new PeerEngine[]{engine},0,1);engine.start();
+   try{walletPost(engine.localPort,new JSONObject());fail("Anonymous history accepted");}catch(java.io.IOException expected){}
+   JSONObject request=WalletProtocol.historyRequest(cert,identity.getPrivate(),System.currentTimeMillis());assertEquals(1,walletPost(engine.localPort,request).getJSONArray("items").length());
+   try{walletPost(engine.localPort,request);fail("Replay accepted");}catch(java.io.IOException expected){}
    long time=android.os.SystemClock.elapsedRealtime();engine.shared.lease.update(new JSONObject().put("owner","e".repeat(64)).put("boot","f".repeat(64)).put("epoch",2).put("remaining",30000),time,time);
-   try{SharedNetwork.http(url,WalletProtocol.historyRequest(cert,identity.getPrivate(),System.currentTimeMillis()),null);fail("Former leader served history");}catch(java.io.IOException expected){}
+   try{walletPost(engine.localPort,WalletProtocol.historyRequest(cert,identity.getPrivate(),System.currentTimeMillis()));fail("Former leader served history");}catch(java.io.IOException expected){}
   }
  }
  @Test public void versionFiveUpgradeKeepsPeopleAndReceipts()throws Exception {

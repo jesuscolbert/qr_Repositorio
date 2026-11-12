@@ -22,7 +22,7 @@ class SharedNetwork {
             long sent=SystemClock.elapsedRealtime();
             boolean wasLeading=leading();long previousEpoch=lease.epoch;
             String action=yieldRequested&&wasLeading?"release":wasLeading?"renew":sent<cooldownUntil?"status":"acquire";
-            JSONObject reply=http(config.raw.getString("coordinator")+"/lease",lease.request(action),"Bearer "+config.raw.getString("networkKey"));
+            JSONObject reply=http(config.raw.getString("coordinator")+"/lease?request="+PeerConfig.random(),lease.request(action),"Bearer "+config.raw.getString("networkKey"));
             lease.update(reply,sent,SystemClock.elapsedRealtime());
             if(reply.optLong("walletRevision")>Long.parseLong(engine.db.meta("walletCursor","0")))try{new WalletRegistry(engine.db,config).refresh();}catch(Exception ignored){/* Cached revocations remain valid; retry on the next heartbeat. */}
             if(action.equals("release")){cooldownUntil=sent+60000;yieldRequested=false;}
@@ -39,7 +39,7 @@ class SharedNetwork {
             engine.state=detail+" · "+recent+" · "+ledger.pending()+(leading()?" entregas de este servidor sin copia confirmada en otro teléfono":" entregas locales pendientes de llegar al servidor");
         }catch(Exception ignored){engine.state=detail;}
     }
-    JSONObject status() throws Exception {return new JSONObject().put("protocol",6).put("device",config.device).put("epoch",lease.epoch).put("vector",ledger.vector()).put("rosterVector",new RosterLedger(engine.db,config).vector()).put("oldVector",engine.offline.vector()).put("applied",engine.db.applied());}
+    JSONObject status() throws Exception {return new JSONObject().put("protocol",7).put("device",config.device).put("epoch",lease.epoch).put("vector",ledger.vector()).put("rosterVector",new RosterLedger(engine.db,config).vector()).put("oldVector",engine.offline.vector()).put("applied",engine.db.applied());}
     JSONObject handle(JSONObject envelope) throws Exception {
         PeerConfig.require(leading(),"Servidor relevado.");
         String nonce=envelope.getString("nonce"),payload=envelope.getString("payload");long time=envelope.getLong("time"),epoch=envelope.getLong("epoch");
@@ -53,7 +53,7 @@ class SharedNetwork {
     JSONObject dispatch(JSONObject r) throws Exception {
         PeerConfig.require(leading(),"Servidor relevado.");String method=r.getString("method");
         if(method.equals("status"))return status();
-        PeerConfig.require(r.optInt("protocol")==6,"Actualiza todos los teléfonos a 1.8 para compartir trabajadores y consumos.");
+        PeerConfig.require(r.optInt("protocol")==7,"Actualiza todos los teléfonos a 1.11 para compartir credenciales y consumos.");
         if(method.equals("scan"))return ledger.scan(r.getJSONObject("request"),r.getJSONObject("operator"),System.currentTimeMillis(),engine.license.allowed());
         PeerConfig.require(method.equals("exchange"),"Método inválido.");
         String source=r.getString("device");PeerConfig.require(source.matches("[a-f0-9]{64}")&&!source.equals(config.device),"Instalación repetida.");
@@ -70,7 +70,7 @@ class SharedNetwork {
     private void mergeHistory(JSONArray history) throws Exception {PeerConfig.require(history.length()<=20,"Página demasiado grande.");for(int i=0;i<history.length();i++)engine.db.learn(PeerDatabase.decode(history.getJSONObject(i)));}
     JSONObject rpc(JSONObject request) throws Exception {
         PeerConfig.require(lease.known(SystemClock.elapsedRealtime()),"Servidor sin confirmar.");
-        long epoch=lease.epoch,now=System.currentTimeMillis();String nonce=PeerConfig.random(),payload=request.put("protocol",6).toString();
+        long epoch=lease.epoch,now=System.currentTimeMillis();String nonce=PeerConfig.random(),payload=request.put("protocol",7).toString();
         JSONObject env=new JSONObject().put("epoch",epoch).put("time",now).put("nonce",nonce).put("payload",payload).put("signature",config.mac("rpc|"+epoch+"|"+now+"|"+nonce+"|"+payload));
         JSONObject response=http(config.raw.getString("url")+"/rpc",env,null);String data=response.getString("payload");
         PeerConfig.require(epoch==lease.epoch&&PeerConfig.equal(config.mac("reply|"+epoch+"|"+nonce+"|"+data),response.getString("signature")),"Respuesta de servidor anterior o no autenticada.");return new JSONObject(data);
@@ -85,16 +85,16 @@ class SharedNetwork {
             }
             if(!lease.known(SystemClock.elapsedRealtime())){updateState();return;}
             exchange();
-        }catch(Exception e){detail=e instanceof IllegalArgumentException&&e.getMessage()!=null&&e.getMessage().startsWith("Actualiza")?"Actualiza todos los teléfonos a 1.8 para compartir trabajadores y consumos":"Sin intercambio confirmado · se reintentará automáticamente";}
+        }catch(Exception e){detail=e instanceof IllegalArgumentException&&e.getMessage()!=null&&e.getMessage().startsWith("Actualiza")?"Actualiza todos los teléfonos a 1.11 para compartir credenciales y consumos":"Sin intercambio confirmado · se reintentará automáticamente";}
         finally{engine.syncing=false;updateState();}
     }
     synchronized void exchange() throws Exception {
         JSONObject remote=rpc(new JSONObject().put("method","status"));
-        PeerConfig.require(remote.getInt("protocol")==6&&!remote.getString("device").equals(config.device),"Actualiza los teléfonos o revisa la instalación.");
+        PeerConfig.require(remote.getInt("protocol")==7&&!remote.getString("device").equals(config.device),"Actualiza los teléfonos o revisa la instalación.");
         boolean complete=false;
         for(int page=0;page<64&&!engine.closed;page++){
             JSONObject request;
-            synchronized(engine.db){request=new JSONObject().put("method","exchange").put("protocol",6).put("device",config.device).put("rosterAfter",new RosterLedger(engine.db,config).vector()).put("rosterEvents",new RosterLedger(engine.db,config).events(remote.getJSONObject("rosterVector"),20)).put("after",ledger.vector()).put("oldAfter",engine.offline.vector()).put("applied",engine.db.applied()).put("events",ledger.events(remote.getJSONObject("vector"),20)).put("oldEvents",engine.offline.events(remote.getJSONArray("oldVector"),20)).put("history",engine.db.history(remote.getLong("applied"),20));}
+            synchronized(engine.db){request=new JSONObject().put("method","exchange").put("protocol",7).put("device",config.device).put("rosterAfter",new RosterLedger(engine.db,config).vector()).put("rosterEvents",new RosterLedger(engine.db,config).events(remote.getJSONObject("rosterVector"),20)).put("after",ledger.vector()).put("oldAfter",engine.offline.vector()).put("applied",engine.db.applied()).put("events",ledger.events(remote.getJSONObject("vector"),20)).put("oldEvents",engine.offline.events(remote.getJSONArray("oldVector"),20)).put("history",engine.db.history(remote.getLong("applied"),20));}
             remote=rpc(request);
             synchronized(engine.db){new RosterLedger(engine.db,config).merge(remote.getJSONArray("rosterEvents"));mergeHistory(remote.getJSONArray("history"));engine.offline.merge(remote.getJSONArray("oldEvents"));ledger.merge(remote.getJSONArray("events"));ledger.acknowledge(remote.getJSONObject("vector"));}
             lastExchange=System.currentTimeMillis();
@@ -121,7 +121,7 @@ class SharedNetwork {
         if(!pending.isEmpty()&&!pending.equals(Long.toString(lease.epoch)))return uncertain();
         engine.db.putMeta(marker,Long.toString(lease.epoch));
         try{
-            JSONObject reply=rpc(new JSONObject().put("method","scan").put("protocol",6).put("request",request).put("operator",config.operator(-1)));
+            JSONObject reply=rpc(new JSONObject().put("method","scan").put("protocol",7).put("request",request).put("operator",config.operator(-1)));
             if(reply.optBoolean("ok")||reply.optBoolean("definitive")){
                 synchronized(engine.db){engine.db.save("shared_results",id,new JSONObject().put("request",request).put("reply",reply));engine.db.putMeta(marker,"");}
                 try{exchange();}catch(Exception ignored){/* The receipt is confirmed; replication resumes automatically. */}
@@ -131,7 +131,7 @@ class SharedNetwork {
     }
     static JSONObject uncertain() throws JSONException {return new JSONObject().put("ok",false).put("definitive",false).put("error","El servidor pudo guardar esta entrega, pero falta confirmación. No entregues otra ración. Mantén la operación pendiente y vuelve a comprobar cuando los teléfonos se reconecten.");}
     static JSONObject http(String url,JSONObject value,String authorization) throws Exception {
-        HttpURLConnection c=(HttpURLConnection)new URL(url).openConnection();c.setConnectTimeout(3000);c.setReadTimeout(5000);c.setRequestMethod("POST");c.setInstanceFollowRedirects(false);c.setDoOutput(true);c.setRequestProperty("Content-Type","application/json");if(authorization!=null)c.setRequestProperty("Authorization",authorization);
+        HttpURLConnection c=(HttpURLConnection)new URL(url).openConnection();c.setConnectTimeout(3000);c.setReadTimeout(5000);c.setRequestMethod("POST");c.setInstanceFollowRedirects(false);c.setUseCaches(false);c.setRequestProperty("Cache-Control","no-store");c.setDoOutput(true);c.setRequestProperty("Content-Type","application/json");if(authorization!=null)c.setRequestProperty("Authorization",authorization);
         c.setRequestProperty("User-Agent","SOBOCE-Comedor/1.5");byte[] body=value.toString().getBytes(StandardCharsets.UTF_8);c.setFixedLengthStreamingMode(body.length);
         try{try(OutputStream out=c.getOutputStream()){out.write(body);}if(c.getResponseCode()!=200)throw new IOException("HTTP "+c.getResponseCode());
             ByteArrayOutputStream bytes=new ByteArrayOutputStream();try(InputStream in=c.getInputStream()){byte[] buffer=new byte[8192];int n;while((n=in.read(buffer))!=-1){if(bytes.size()+n>1048576)throw new IOException("Respuesta demasiado grande.");bytes.write(buffer,0,n);}}return new JSONObject(bytes.toString("UTF-8"));

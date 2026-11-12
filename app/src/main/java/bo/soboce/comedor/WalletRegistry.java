@@ -11,7 +11,7 @@ import java.util.*;
 final class WalletRegistry {
  interface Remote {JSONObject call(JSONObject request)throws Exception;}
  final PeerDatabase db;final PeerConfig config;final Remote remote;
- WalletRegistry(PeerDatabase db,PeerConfig config){this(db,config,r->SharedNetwork.http(config.raw.getString("coordinator")+"/wallet",r,"Bearer "+config.raw.getString("networkKey")));}
+ WalletRegistry(PeerDatabase db,PeerConfig config){this(db,config,r->SharedNetwork.http(config.raw.getString("coordinator")+"/wallet?request="+PeerConfig.random(),r,"Bearer "+config.raw.getString("networkKey")));}
  WalletRegistry(PeerDatabase db,PeerConfig config,Remote remote){this.db=db;this.config=config;this.remote=remote;}
  static void create(SQLiteDatabase db){db.execSQL("CREATE TABLE IF NOT EXISTS wallet_bindings(id TEXT PRIMARY KEY,json TEXT NOT NULL)");db.execSQL("CREATE TABLE IF NOT EXISTS wallet_audit(id TEXT PRIMARY KEY,json TEXT NOT NULL)");}
  String tag(String person)throws Exception{return config.mac("wallet-person|"+person);}

@@ -1,5 +1,25 @@
 # SOBOCE Comedor
 
+## Credencial opcional del obrero (encargados 1.11.0 / Mi Comedor 1.0.0)
+
+`worker/` genera la APK independiente **Mi Comedor**, paquete `bo.colbert.obrero`. Solo muestra el QR propio y los consumos recibidos de los últimos 30 días. No incorpora padrón, precios, claves del encargado, licencias administrativas, servidor ni túnel. Los QR impresos y la impresión por plantas siguen disponibles. El encargado conserva el control de acceso mediante Colbert Cobros.
+
+La sincronización de credenciales usa protocolo 7 y la base migra a versión 6 sin eliminar datos. Actualizar primero todos los encargados, conservando sus datos y la variante SOBOCE o FRIGOR que ya tienen instalada. Las versiones anteriores no reconocen los recibos del QR dinámico. Desplegar las dos configuraciones existentes de `backend/coordination` sin cambiar sus secretos NETWORK_KEY ni sus Durable Objects.
+
+Activación presencial:
+
+1. El obrero instala Mi Comedor y desbloquea con el PIN, patrón o contraseña del teléfono. En «Activar mi credencial» muestra la solicitud QR.
+2. El encargado entra en «App del obrero», busca el registro existente de la empresa/planta y comprueba el carnet original y su titular. Escanea la solicitud y confirma la identidad. Necesita internet y licencia vigente para vincular.
+3. El obrero escanea la autorización que muestra el encargado y confirma sus datos. No crea otro usuario: ambos tipos de QR resuelven al mismo trabajador y al mismo límite por día/comida; dieta comparte el límite de almuerzo.
+
+La solicitud dura 5 minutos y está ligada a una clave P-256 no exportable de Android Keystore. La autorización solo sirve para esa clave y esa solicitud. El QR de comida cambia cada 30 segundos y se acepta con 15 segundos de tolerancia de reloj; requiere hora automática. La clave requiere el desbloqueo del teléfono y la app vuelve a bloquearse tras 4 minutos. Android impide las capturas normales de estas pantallas; esto no impide fotografiar la pantalla o prestar el teléfono. El encargado debe comprobar la identidad al escanear el QR digital. No hay fotos ni reconocimiento biométrico del trabajador en esta versión.
+
+El QR funciona sin internet hasta 30 días desde la activación o última renovación. Al abrir la app con conexión consulta el historial y renueva si hay un encargado servidor disponible y la vinculación sigue vigente; también hay actualización manual. El historial descargado se cifra localmente. No registra comidas ni da acceso a otros trabajadores. `/wallet` en el servidor del encargado exige una solicitud firmada por el celular vinculado, controla repeticiones y devuelve solo los movimientos de esa persona. Las respuestas no se almacenan en cachés HTTP.
+
+El coordinador mantiene únicamente la vinculación seudónima, huella de clave, versión y auditoría del encargado. No guarda nombres/carnets de obreros ni consumos. Su transacción impide que dos encargados autoricen simultáneamente dos celulares con la misma versión. Reemplazar o revocar requiere conexión; los encargados reciben los cambios al sincronizar. Un encargado aislado puede seguir aceptando una credencial revocada hasta recibir el cambio o hasta que venza. La operación sin conexión tampoco puede impedir duplicados entre encargados incomunicados; se conservan para revisión posterior. Los consumos legítimos anteriores a una revocación no desaparecen.
+
+Un teléfono perdido se revoca desde el encargado, y el reemplazo exige otra verificación presencial. Reinstalar o borrar datos pierde la clave local y requiere nueva activación. El QR físico sigue siendo válido como alternativa: revocar un celular no revoca la tarjeta física. La app del obrero no sustituye ni elude el control de pagos de la app del encargado.
+
 ## Credenciales PDF para impresión — 1.10.0
 
 **Menú → Imprimir QR en PDF** o **Trabajadores y QR → Imprimir QR de esta planta** permite generar un lote de trabajadores activos de la empresa actual. Elegir una planta o todas separadas, QR de **7 × 7 cm** u **8 × 8 cm**, y hoja **Carta (21,59 × 27,94 cm)**, **Oficio (21,59 × 33,02 cm)** o **Legal/Oficio (21,59 × 35,56 cm)**. Se muestran las tarjetas que caben por hoja antes de generar. Cada planta empieza en una página nueva; no se mezclan empresas ni se incluyen visitantes o inactivos.
@@ -158,26 +178,6 @@ GitHub Actions en `.github/workflows/android.yml` prueba el backend, el protocol
 ## Verificación
 
 `node --test tests/backend.test.cjs` ejecuta casos de duplicados entre plantas, recuperación de respuesta perdida, revocación, permisos, vencimientos y precios históricos con un adaptador de Sheets en memoria. No sustituye una prueba con dos teléfonos y la implementación real de Apps Script. Las cuotas y la latencia de Google deben medirse en la hora de mayor afluencia antes de producción.
-
-## Credencial opcional del obrero (encargados 1.11.0 / Mi Comedor 1.0.0)
-
-`worker/` genera la APK independiente **Mi Comedor**, paquete `bo.colbert.obrero`. Solo muestra el QR propio y los consumos recibidos de los últimos 30 días. No incorpora padrón, precios, claves del encargado, licencias administrativas, servidor ni túnel. Los QR impresos y la impresión por plantas siguen disponibles. El encargado conserva el control de acceso mediante Colbert Cobros.
-
-Actualizar primero todos los encargados, conservando sus datos y la variante SOBOCE o FRIGOR que ya tienen instalada. Las versiones anteriores no reconocen los recibos del QR dinámico. Desplegar las dos configuraciones existentes de `backend/coordination` sin cambiar sus secretos NETWORK_KEY ni sus Durable Objects.
-
-Activación presencial:
-
-1. El obrero instala Mi Comedor y desbloquea con el PIN, patrón o contraseña del teléfono. En «Activar mi credencial» muestra la solicitud QR.
-2. El encargado entra en «App del obrero», busca el registro existente de la empresa/planta y comprueba el carnet original y su titular. Escanea la solicitud y confirma la identidad. Necesita internet y licencia vigente para vincular.
-3. El obrero escanea la autorización que muestra el encargado y confirma sus datos. No crea otro usuario: ambos tipos de QR resuelven al mismo trabajador y al mismo límite por día/comida; dieta comparte el límite de almuerzo.
-
-La solicitud dura 5 minutos y está ligada a una clave P-256 no exportable de Android Keystore. La autorización solo sirve para esa clave y esa solicitud. El QR de comida cambia cada 30 segundos y se acepta con 15 segundos de tolerancia de reloj; requiere hora automática. La clave requiere el desbloqueo del teléfono y la app vuelve a bloquearse tras 4 minutos. Android impide las capturas normales de estas pantallas; esto no impide fotografiar la pantalla o prestar el teléfono. El encargado debe comprobar la identidad al escanear el QR digital. No hay fotos ni reconocimiento biométrico del trabajador en esta versión.
-
-El QR funciona sin internet hasta 30 días desde la activación o última renovación. Al abrir la app con conexión consulta el historial y renueva si hay un encargado servidor disponible y la vinculación sigue vigente; también hay actualización manual. El historial descargado se cifra localmente. No registra comidas ni da acceso a otros trabajadores. `/wallet` en el servidor del encargado exige una solicitud firmada por el celular vinculado, controla repeticiones y devuelve solo los movimientos de esa persona. Las respuestas no se almacenan en cachés HTTP.
-
-El coordinador mantiene únicamente la vinculación seudónima, huella de clave, versión y auditoría del encargado. No guarda nombres/carnets de obreros ni consumos. Su transacción impide que dos encargados autoricen simultáneamente dos celulares con la misma versión. Reemplazar o revocar requiere conexión; los encargados reciben los cambios al sincronizar. Un encargado aislado puede seguir aceptando una credencial revocada hasta recibir el cambio o hasta que venza. La operación sin conexión tampoco puede impedir duplicados entre encargados incomunicados; se conservan para revisión posterior. Los consumos legítimos anteriores a una revocación no desaparecen.
-
-Un teléfono perdido se revoca desde el encargado, y el reemplazo exige otra verificación presencial. Reinstalar o borrar datos pierde la clave local y requiere nueva activación. El QR físico sigue siendo válido como alternativa: revocar un celular no revoca la tarjeta física. La app del obrero no sustituye ni elude el control de pagos de la app del encargado.
 
 ## Archivos privados
 
