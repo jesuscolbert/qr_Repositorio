@@ -27,11 +27,14 @@ public class QrPrintTest {
         folder=new File(fixture.context.getExternalFilesDir(null),"pdf-tests");assertTrue(folder.isDirectory()||folder.mkdirs());
     }
     @After public void cleanup()throws Exception {
-        try{if(folder!=null){PeerDatabaseTest ui=new PeerDatabaseTest();ui.shellUi("mkdir -p /sdcard/Download/soboce-pdf");for(File file:Objects.requireNonNull(folder.listFiles())){
-            ParcelFileDescriptor[] pipe=InstrumentationRegistry.getInstrumentation().getUiAutomation().executeShellCommandRw("cat > /sdcard/Download/soboce-pdf/"+file.getName());
-            try(InputStream source=new FileInputStream(file);OutputStream out=new ParcelFileDescriptor.AutoCloseOutputStream(pipe[1])){source.transferTo(out);}
-            try(InputStream result=new ParcelFileDescriptor.AutoCloseInputStream(pipe[0])){result.readAllBytes();}
-        }}}
+        try{if(folder!=null){
+            // UiAutomation tokenizes commands directly; it does not interpret shell quoting/redirection.
+            assertTrue(folder.getAbsolutePath().matches("[A-Za-z0-9/._-]+"));PeerDatabaseTest ui=new PeerDatabaseTest();ui.shellUi("mkdir -p /sdcard/Download/soboce-pdf");
+            ui.shellUi("cp -r "+folder.getAbsolutePath()+"/. /sdcard/Download/soboce-pdf/");
+            try(ParcelFileDescriptor fd=InstrumentationRegistry.getInstrumentation().getUiAutomation().executeShellCommand("ls /sdcard/Download/soboce-pdf");InputStream result=new ParcelFileDescriptor.AutoCloseInputStream(fd)){
+                String saved=new String(result.readAllBytes(),StandardCharsets.UTF_8);for(File file:Objects.requireNonNull(folder.listFiles()))assertTrue("Missing PDF artifact: "+file.getName(),saved.contains(file.getName()));
+            }
+        }}
         finally{if(db!=null)db.close();if(fixture!=null)fixture.cleanup();}
     }
     @Test public void allPaperAndQrSizesRenderReadableCodesAtPhysicalSizeWithoutRecordingMeals()throws Exception {
