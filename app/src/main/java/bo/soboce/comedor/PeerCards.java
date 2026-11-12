@@ -9,7 +9,7 @@ import java.util.*;
 final class PeerCards {
     private static final List<String> MEALS=Meals.ALL;
     static boolean local(String action){return Arrays.asList("session","people","today","report","conflicts","issue","visitor","worker").contains(action);}
-    static boolean format(String qr){return RosterLedger.format(qr)||qr!=null&&qr.length()<=2048&&qr.matches("SB[23]:[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+");}
+    static boolean format(String qr){return bo.colbert.credential.WalletProtocol.isQr(qr)||RosterLedger.format(qr)||qr!=null&&qr.length()<=2048&&qr.matches("SB[23]:[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+");}
 
     static JSONObject request(PeerDatabase db,PeerConfig config,JSONObject request,long now) throws Exception {
         try {
@@ -61,6 +61,7 @@ final class PeerCards {
         catch(JSONException e){throw new IllegalArgumentException("La tarjeta QR está incompleta.");}
     }
     private static JSONObject resolveChecked(PeerDatabase db,PeerConfig config,String qr,long when) throws Exception {
+        if(bo.colbert.credential.WalletProtocol.isQr(qr))return new WalletRegistry(db,config).resolve(qr,when);
         PeerConfig.require(format(qr),"QR no reconocido.");if(RosterLedger.format(qr))return new RosterLedger(db,config).accept(qr,when);JSONObject card;
         try {
             String[] parts=qr.substring(4).split("\\.",-1);String body=new String(Base64.getUrlDecoder().decode(parts[0]),StandardCharsets.UTF_8);

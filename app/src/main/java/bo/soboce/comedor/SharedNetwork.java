@@ -24,6 +24,7 @@ class SharedNetwork {
             String action=yieldRequested&&wasLeading?"release":wasLeading?"renew":sent<cooldownUntil?"status":"acquire";
             JSONObject reply=http(config.raw.getString("coordinator")+"/lease",lease.request(action),"Bearer "+config.raw.getString("networkKey"));
             lease.update(reply,sent,SystemClock.elapsedRealtime());
+            if(reply.optLong("walletRevision")>Long.parseLong(engine.db.meta("walletCursor","0")))try{new WalletRegistry(engine.db,config).refresh();}catch(Exception ignored){/* Cached revocations remain valid; retry on the next heartbeat. */}
             if(action.equals("release")){cooldownUntil=sent+60000;yieldRequested=false;}
             if(leading()&&(!wasLeading||previousEpoch!=lease.epoch)){leadershipSince=sent;originSeen=sent;}
             if(leading())detail="Este teléfono es el servidor";

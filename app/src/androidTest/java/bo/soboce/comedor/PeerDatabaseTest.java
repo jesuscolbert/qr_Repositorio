@@ -70,7 +70,7 @@ public class PeerDatabaseTest {
             ad.getWritableDatabase().setVersion(4);
         }
         try(PeerDatabase reopened=new PeerDatabase(context,a,"roster-conflict-a.db")){
-            assertEquals(5,reopened.getReadableDatabase().getVersion());assertNotNull(reopened.get("people","CI-1122334"));assertEquals(1,new OfflineLedger(reopened,a).records().size());
+            assertEquals(6,reopened.getReadableDatabase().getVersion());assertNotNull(reopened.get("people","CI-1122334"));assertEquals(1,new OfflineLedger(reopened,a).records().size());
         }finally{context.deleteDatabase("roster-conflict-a.db");context.deleteDatabase("roster-conflict-b.db");}
     }
     @Test public void paymentPermissionControlsWorkerQrAndMealMutations()throws Exception{

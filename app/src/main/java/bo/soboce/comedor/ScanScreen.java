@@ -33,6 +33,11 @@ final class ScanScreen {
     void onCode(String qr){
         if(closed||!resumed||qr==null||!gate.read(qr,SystemClock.elapsedRealtime()))return;
         if(!qr.matches("SB1:[a-f0-9]{64}")&&!(vault.get("mode").equals("p2p")&&PeerCards.format(qr))){show(activity.obj("ok","false","definitive","true","error","Este QR no pertenece al comedor."));return;}
+        if(bo.colbert.credential.WalletProtocol.isQr(qr)){gate.hold();activity.confirmWorkerIdentity(qr,()->record(qr),this::ready);return;}
+        record(qr);
+    }
+    void record(String qr){
+        if(closed||!resumed)return;
         try{JSONObject request=activity.obj("action","scan","plant",plant,"meal",meal,"qr",qr,"requestId",UUID.randomUUID().toString());vault.put("pending",request.toString());send(request);}catch(Exception e){show(activity.obj("ok","false","error","No se pudo guardar la solicitud. Comprueba el registro antes de continuar."));}
     }
     void send(JSONObject request){

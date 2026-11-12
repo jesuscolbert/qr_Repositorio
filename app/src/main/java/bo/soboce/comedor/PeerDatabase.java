@@ -12,7 +12,7 @@ final class PeerDatabase extends SQLiteOpenHelper implements QuorumLog.Storage {
         this(context,config,Companies.database(context,config));
     }
     PeerDatabase(Context context, PeerConfig config,String databaseName) throws Exception {
-        super(context,databaseName,null,5); this.config=config;
+        super(context,databaseName,null,6); this.config=config;
         SQLiteDatabase db=getWritableDatabase();
         db.beginTransaction();
         try {
@@ -44,12 +44,14 @@ final class PeerDatabase extends SQLiteOpenHelper implements QuorumLog.Storage {
         OfflineLedger.create(db);
         SharedLedger.create(db);
         RosterLedger.create(db);
+        WalletRegistry.create(db);
     }
     @Override public void onUpgrade(SQLiteDatabase db,int old,int version){
-        if(old<1||old>4||version!=5)throw new IllegalStateException("Se requiere migración sin pérdida de datos.");
+        if(old<1||old>5||version!=6)throw new IllegalStateException("Se requiere migración sin pérdida de datos.");
         OfflineLedger.create(db);
         SharedLedger.create(db);
         RosterLedger.create(db);
+        WalletRegistry.create(db);
         // The constructor replays after SQLiteOpenHelper has finished opening the database.
         if(old==1)db.execSQL("DELETE FROM meta WHERE k='projectionVersion'");
     }

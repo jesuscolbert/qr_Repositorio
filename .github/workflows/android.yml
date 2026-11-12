@@ -3,9 +3,9 @@ on:
   workflow_dispatch:
   push:
     branches: [main, soboce-comedor]
-    paths: ['app/**', 'billing/**', 'licensing/**', 'backend/**', 'tests/**', 'scripts/**', '*.gradle', 'gradle.properties', '.github/workflows/android.yml']
+    paths: ['app/**', 'worker/**', 'credential/**', 'billing/**', 'licensing/**', 'backend/**', 'tests/**', 'scripts/**', '*.gradle', 'gradle.properties', '.github/workflows/android.yml']
   pull_request:
-    paths: ['app/**', 'billing/**', 'licensing/**', 'backend/**', 'tests/**', 'scripts/**', '*.gradle', 'gradle.properties', '.github/workflows/android.yml']
+    paths: ['app/**', 'worker/**', 'credential/**', 'billing/**', 'licensing/**', 'backend/**', 'tests/**', 'scripts/**', '*.gradle', 'gradle.properties', '.github/workflows/android.yml']
 permissions:
   contents: read
 jobs:
@@ -50,7 +50,7 @@ jobs:
                   raise SystemExit('Falta configurar la firma estable en GitHub Secrets.')
               (target / name).write_bytes(base64.b64decode(value, validate=True))
           PY
-      - run: node --test tests/backend.test.cjs tests/lease.test.mjs
+      - run: node --test tests/backend.test.cjs tests/lease.test.mjs tests/wallet.test.mjs
       - name: Probar cliente de licencias para escritorio
         run: |
           python3 -m pip install cryptography openpyxl
@@ -63,7 +63,7 @@ jobs:
           java -cp .tools/quorum-tests bo.soboce.comedor.QuorumLogTest
       - name: Compilar conector de túnel para Android
         run: bash scripts/build_cloudflared.sh
-      - run: gradle :app:assemblePilot :app:lintPilot :app:assembleFrigor :app:lintFrigor :billing:assembleRelease :billing:lintRelease :licensing:assembleRelease :licensing:lintRelease --console=plain
+      - run: gradle :app:assemblePilot :app:lintPilot :app:assembleFrigor :app:lintFrigor :billing:assembleRelease :billing:lintRelease :licensing:assembleRelease :licensing:lintRelease :worker:assembleRelease :worker:lintRelease --console=plain
       - name: Habilitar emulador
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -106,6 +106,8 @@ jobs:
             mkdir -p app/build/reports/ui
             gradle :app:connectedDebugAndroidTest --console=plain || { adb pull /sdcard/Download/soboce-design app/build/reports/ui/; mkdir -p app/build/reports/pdf; adb pull /sdcard/Download/soboce-pdf app/build/reports/pdf/; exit 1; }
             gradle :billing:connectedDebugAndroidTest :licensing:connectedDebugAndroidTest --console=plain || { adb pull /sdcard/Download/colbert-billing-design app/build/reports/ui/; exit 1; }
+            gradle :worker:connectedDebugAndroidTest --console=plain || { adb pull /sdcard/Download/worker-design app/build/reports/ui/; exit 1; }
+            adb pull /sdcard/Download/worker-design app/build/reports/ui/
             adb install -r app/build/outputs/apk/pilot/app-pilot.apk
             adb shell am start -W -n bo.soboce.comedor.piloto/bo.soboce.comedor.MainActivity
             adb install -r app/build/outputs/apk/frigor/app-frigor.apk
@@ -126,6 +128,8 @@ jobs:
             app/build/reports/pdf/
             billing/build/reports/androidTests/
             licensing/build/reports/androidTests/
+            worker/build/reports/androidTests/
+            worker/build/reports/lint-results-*
             app/build/reports/lint-results-*
             billing/build/reports/lint-results-*
             licensing/build/reports/lint-results-*
@@ -152,4 +156,9 @@ jobs:
             licensing/build/outputs/aar/*release.aar
             licensing/desktop/colbert_license.py
             licensing/README.md
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Mi-Comedor-Obrero
+          path: worker/build/outputs/apk/release/*.apk
           if-no-files-found: error

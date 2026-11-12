@@ -22,6 +22,7 @@ class PeerEngine implements QuorumLog.Network, AutoCloseable {
     final String[] peerStates={"Sin comprobar","Sin comprobar","Sin comprobar","Sin comprobar"};
     private final ExecutorService clients=new ThreadPoolExecutor(4,4,0L,TimeUnit.MILLISECONDS,new ArrayBlockingQueue<>(12),new ThreadPoolExecutor.AbortPolicy());
     private final Map<String,Long> nonces=new LinkedHashMap<>();
+    private final Map<String,Long> walletRequests=new LinkedHashMap<>(),walletRates=new LinkedHashMap<>();
     private ServerSocket server;
     volatile boolean closed;
     volatile int connected=1;
@@ -41,11 +42,12 @@ class PeerEngine implements QuorumLog.Network, AutoCloseable {
             s.setSoTimeout(5000);InputStream in=s.getInputStream();ByteArrayOutputStream header=new ByteArrayOutputStream();int b,tail=0;
             while(header.size()<8192&&(b=in.read())!=-1){header.write(b);tail=(tail<<8)|b;if(tail==0x0d0a0d0a)break;}
             PeerConfig.require(tail==0x0d0a0d0a,"Cabecera inválida.");
-            String[] lines=header.toString("US-ASCII").split("\r\n");if(lines[0].equals("GET / HTTP/1.1")||lines[0].equals("GET /health HTTP/1.1")){send(s,200,new JSONObject().put("ok",true).put("service",serviceName).toString());return;}PeerConfig.require(lines[0].equals("POST /rpc HTTP/1.1"),"Ruta inválida.");int length=-1;
+            String[] lines=header.toString("US-ASCII").split("\r\n");if(lines[0].equals("GET / HTTP/1.1")||lines[0].equals("GET /health HTTP/1.1")){send(s,200,new JSONObject().put("ok",true).put("service",serviceName).toString());return;}boolean wallet=lines[0].equals("POST /wallet HTTP/1.1");PeerConfig.require(wallet||lines[0].equals("POST /rpc HTTP/1.1"),"Ruta inválida.");int length=-1;
             for(String line:lines){String lower=line.toLowerCase(Locale.ROOT);PeerConfig.require(!lower.startsWith("transfer-encoding:"),"Codificación inválida.");if(lower.startsWith("content-length:")){PeerConfig.require(length==-1,"Longitud repetida.");length=Integer.parseInt(line.substring(line.indexOf(':')+1).trim());}}
-            PeerConfig.require(length>0&&length<=1048576,"Solicitud demasiado grande.");byte[] bytes=new byte[length];int offset=0;
+            PeerConfig.require(length>0&&length<=(wallet?16384:1048576),"Solicitud demasiado grande.");byte[] bytes=new byte[length];int offset=0;
             while(offset<length){int n=in.read(bytes,offset,length-offset);if(n<0)throw new EOFException();offset+=n;}
             JSONObject envelope=new JSONObject(new String(bytes,StandardCharsets.UTF_8));
+            if(wallet){send(s,200,wallet(envelope).toString());return;}
             if(shared!=null){send(s,200,shared.handle(envelope).toString());return;}
             String payload=envelope.getString("payload"),nonce=envelope.getString("nonce");int source=envelope.getInt("source");long time=envelope.getLong("time");
             PeerConfig.require(source>=0&&source<4&&nonce.matches("[a-f0-9]{64}")&&Math.abs(System.currentTimeMillis()-time)<=120000,"Identidad o reloj inválido.");
@@ -60,6 +62,16 @@ class PeerEngine implements QuorumLog.Network, AutoCloseable {
         }catch(IOException ignored){/* No personal data or connector secrets in logs. */}
     }
     private static void send(Socket socket,int code,String data) throws IOException {byte[] body=data.getBytes(StandardCharsets.UTF_8);OutputStream out=socket.getOutputStream();out.write(("HTTP/1.1 "+code+(code==200?" OK":" Bad Request")+"\r\nContent-Type: application/json; charset=utf-8\r\nCache-Control: no-store\r\nConnection: close\r\nContent-Length: "+body.length+"\r\n\r\n").getBytes(StandardCharsets.US_ASCII));out.write(body);out.flush();}
+    WalletRegistry walletRegistry(){return new WalletRegistry(db,config);}
+    JSONObject wallet(JSONObject request)throws Exception {
+        PeerConfig.require(shared!=null&&shared.leading(),"Servidor sin confirmar.");long epoch=shared.lease.epoch,now=System.currentTimeMillis();
+        WalletRegistry registry=walletRegistry();JSONObject claim=bo.colbert.credential.WalletProtocol.verifyHistory(request,now);registry.authenticated(request.getString("cert"));String key=bo.colbert.credential.WalletProtocol.hash(claim.getString("k")),nonce=key+request.getString("nonce");
+        synchronized(walletRequests){
+            walletRequests.entrySet().removeIf(x->x.getValue()<now-120000);walletRates.entrySet().removeIf(x->x.getValue()<now-120000);
+            PeerConfig.require(!walletRequests.containsKey(nonce)&&now-walletRates.getOrDefault(key,0L)>=5000&&walletRequests.size()<2048,"Espera antes de volver a consultar.");walletRequests.put(nonce,now);walletRates.put(key,now);
+        }
+        JSONObject result=registry.history(request,now);PeerConfig.require(shared.leading()&&shared.lease.epoch==epoch,"Servidor relevado; vuelve a consultar.");return result;
+    }
     JSONObject dispatch(JSONObject r) throws Exception {
         String method=r.getString("method");
         if(method.equals("status"))return new JSONObject().put("time",System.currentTimeMillis()).put("applied",db.applied()).put("protocol",PROTOCOL).put("vector",offline.vector()).put("instance",instance);
