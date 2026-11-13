@@ -117,9 +117,10 @@ class Viewer:
             generation,report,error,export,path=self.results.get_nowait();self.busy=False;self.refresh_button.configure(state='normal')
             if generation!=self.generation:self.root.after(10,self.refresh)
             elif error:
-                if isinstance(error,(LicenseBlocked,PermissionError)):self.clear()
+                if isinstance(error,LicenseBlocked):self.clear()
                 stamp=self.timestamp(self.last_report['serverTime']) if self.last_report else 'ninguno'
                 message=str(error) if isinstance(error,(RuntimeError,ValueError,PermissionError)) else 'No se pudo conectar. Comprueba internet y que haya un encargado conectado.'
+                if isinstance(error,PermissionError) and export:message='Cierra el archivo en Excel o elige otra carpeta con permiso de escritura y vuelve a exportar.'
                 self.status.set(message+' Último reporte recibido: '+stamp+'.');self.export_button.configure(state='disabled')
                 if export:messagebox.showerror('No se pudo exportar',message)
             elif export:

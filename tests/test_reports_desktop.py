@@ -13,6 +13,7 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path[:0]=[str(ROOT/'desktop'),str(ROOT/'licensing/desktop')]
 from configuration import append, read, validate
 from reports_client import ReportsClient, mac, workbook_bytes, save_workbook
+from colbert_license import LicenseBlocked
 
 def config():
     return dict(version=1,companies=[dict(id='soboce',name='SOBOCE',url='https://comedor.colbert2027.shop',reportKey='a'*64,license=dict(contractId='soboce-comedor',productId='soboce-comedor'))])
@@ -32,6 +33,8 @@ class ReportsTests(unittest.TestCase):
         with self.assertRaises(ValueError):ReportsClient(dict(c,reportKey='b'*64)).verify(raw,'nonce')
         with patch('reports_client.time.time',return_value=time.time()+300):
             with self.assertRaises(ValueError):client.verify(raw,'nonce')
+        denied=json.dumps(dict(ok=False,error='license'));signed=json.dumps(dict(payload=denied,signature=mac(c['reportKey'],'reply|nonce|'+denied)))
+        with self.assertRaises(LicenseBlocked):client.verify(signed,'nonce')
     def test_xlsx_must_be_verified_and_saved_atomically(self):
         data=io.BytesIO()
         with zipfile.ZipFile(data,'w') as z:

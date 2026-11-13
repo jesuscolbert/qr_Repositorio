@@ -11,7 +11,7 @@ import time
 import urllib.request
 import urllib.error
 import zipfile
-from colbert_license import NoRedirect
+from colbert_license import NoRedirect, LicenseBlocked
 
 LIMIT = 30 * 1024 * 1024
 
@@ -49,7 +49,7 @@ class ReportsClient:
         report = json.loads(payload)
         if not report.get('ok'):
             if report.get('error') == 'license':
-                raise PermissionError('El encargado debe actualizar su permiso en Licencia y pagos. Enciende Colbert Cobros y pulsa Comprobar acceso en el teléfono.')
+                raise LicenseBlocked('El encargado debe actualizar su permiso en Licencia y pagos. Enciende Colbert Cobros y pulsa Comprobar acceso en el teléfono.')
             raise RuntimeError('El comedor está cambiando de servidor. Se volverá a consultar automáticamente.')
         if abs(time.time()*1000-report['serverTime']) > 180000:
             raise ValueError('El reporte no es reciente. Comprueba la hora automática de ambos equipos.')
