@@ -18,6 +18,7 @@ class PeerEngine implements QuorumLog.Network, AutoCloseable {
     final String instance;
     final int localPort;
     final String serviceName;
+    final String appVersion;
     volatile String identityWarning="";
     final String[] peerStates={"Sin comprobar","Sin comprobar","Sin comprobar","Sin comprobar"};
     private final ExecutorService clients=new ThreadPoolExecutor(4,4,0L,TimeUnit.MILLISECONDS,new ArrayBlockingQueue<>(12),new ThreadPoolExecutor.AbortPolicy());
@@ -30,7 +31,7 @@ class PeerEngine implements QuorumLog.Network, AutoCloseable {
     volatile boolean syncing;
     volatile String state="Registro local disponible. Buscando teléfonos para sincronizar…";
     PeerEngine(Context context,PeerConfig config) throws Exception {this(context,config,Companies.database(context,config));}
-    PeerEngine(Context context,PeerConfig config,String databaseName) throws Exception {this.config=config;localPort=context.getResources().getInteger(R.integer.peer_port);serviceName=context.getString(R.string.app_name);license=Companies.license(context,config);db=new PeerDatabase(context,config,databaseName);offline=new OfflineLedger(db,config);shared=config.shared?new SharedNetwork(this):null;synchronized(db){String saved=db.meta("instance","");if(saved.isEmpty()){saved=UUID.randomUUID().toString();db.putMeta("instance",saved);}instance=saved;}}
+    PeerEngine(Context context,PeerConfig config,String databaseName) throws Exception {this.config=config;localPort=context.getResources().getInteger(R.integer.peer_port);serviceName=context.getString(R.string.app_name);appVersion=context.getPackageManager().getPackageInfo(context.getPackageName(),0).versionName;license=Companies.license(context,config);db=new PeerDatabase(context,config,databaseName);offline=new OfflineLedger(db,config);shared=config.shared?new SharedNetwork(this):null;synchronized(db){String saved=db.meta("instance","");if(saved.isEmpty()){saved=UUID.randomUUID().toString();db.putMeta("instance",saved);}instance=saved;}}
     void start() throws IOException {
         server=new ServerSocket();server.setReuseAddress(true);server.bind(new InetSocketAddress(InetAddress.getByName("127.0.0.1"),localPort),16);
         Thread acceptor=new Thread(()->{
@@ -43,7 +44,7 @@ class PeerEngine implements QuorumLog.Network, AutoCloseable {
             s.setSoTimeout(5000);InputStream in=s.getInputStream();ByteArrayOutputStream header=new ByteArrayOutputStream();int b,tail=0;
             while(header.size()<8192&&(b=in.read())!=-1){header.write(b);tail=(tail<<8)|b;if(tail==0x0d0a0d0a)break;}
             PeerConfig.require(tail==0x0d0a0d0a,"Cabecera inválida.");
-            String[] lines=header.toString("US-ASCII").split("\r\n");if(lines[0].equals("GET / HTTP/1.1")||lines[0].equals("GET /health HTTP/1.1")){send(s,200,new JSONObject().put("ok",true).put("service",serviceName).toString());return;}boolean wallet=lines[0].equals("POST /wallet HTTP/1.1");PeerConfig.require(wallet||lines[0].equals("POST /reports HTTP/1.1")||lines[0].equals("POST /rpc HTTP/1.1"),"Ruta inválida.");int length=-1;
+            String[] lines=header.toString("US-ASCII").split("\r\n");if(lines[0].equals("GET / HTTP/1.1")||lines[0].equals("GET /health HTTP/1.1")){send(s,200,new JSONObject().put("ok",true).put("service",serviceName).put("appVersion",appVersion).put("reportsProtocol",1).toString());return;}boolean wallet=lines[0].equals("POST /wallet HTTP/1.1");PeerConfig.require(wallet||lines[0].equals("POST /reports HTTP/1.1")||lines[0].equals("POST /rpc HTTP/1.1"),"Ruta inválida.");int length=-1;
             for(String line:lines){String lower=line.toLowerCase(Locale.ROOT);PeerConfig.require(!lower.startsWith("transfer-encoding:"),"Codificación inválida.");if(lower.startsWith("content-length:")){PeerConfig.require(length==-1,"Longitud repetida.");length=Integer.parseInt(line.substring(line.indexOf(':')+1).trim());}}
             PeerConfig.require(length>0&&length<=((wallet||lines[0].equals("POST /reports HTTP/1.1"))?16384:1048576),"Solicitud demasiado grande.");byte[] bytes=new byte[length];int offset=0;
             while(offset<length){int n=in.read(bytes,offset,length-offset);if(n<0)throw new EOFException();offset+=n;}
@@ -60,7 +61,8 @@ class PeerEngine implements QuorumLog.Network, AutoCloseable {
             JSONObject reply;try{reply=dispatch(request);}catch(Exception e){reply=new JSONObject().put("error","Operación no confirmada.");}
             String result=reply.toString();byte[] body=new JSONObject().put("payload",result).put("signature",config.sign("reply|"+nonce+"|"+result)).toString().getBytes(StandardCharsets.UTF_8);
             OutputStream out=s.getOutputStream();out.write(("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nCache-Control: no-store\r\nConnection: close\r\nContent-Length: "+body.length+"\r\n\r\n").getBytes(StandardCharsets.US_ASCII));out.write(body);out.flush();
-          }catch(Exception rejected){try{send(s,400,"{\"error\":\"Solicitud inválida o no autorizada; comprueba fecha y configuración.\"}");}catch(IOException ignored){}}
+          }catch(DesktopReports.Rejected rejected){try{send(s,400,"{\"error\":\"reports_request_rejected\",\"code\":\""+rejected.code+"\"}");}catch(IOException ignored){}}
+          catch(Exception rejected){try{send(s,400,"{\"error\":\"Solicitud inválida o no autorizada; comprueba fecha y configuración.\"}");}catch(IOException ignored){}}
         }catch(IOException ignored){/* No personal data or connector secrets in logs. */}
     }
     private static void send(Socket socket,int code,String data) throws IOException {byte[] body=data.getBytes(StandardCharsets.UTF_8);OutputStream out=socket.getOutputStream();out.write(("HTTP/1.1 "+code+(code==200?" OK":" Bad Request")+"\r\nContent-Type: application/json; charset=utf-8\r\nCache-Control: no-store\r\nConnection: close\r\nContent-Length: "+body.length+"\r\n\r\n").getBytes(StandardCharsets.US_ASCII));out.write(body);out.flush();}

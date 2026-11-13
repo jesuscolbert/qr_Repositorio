@@ -111,6 +111,7 @@ jobs:
             mkdir -p app/build/reports/excel
             adb pull /sdcard/Download/soboce-excel app/build/reports/excel/
             python3 tests/check_excel_export.py app/build/reports/excel/soboce-excel/consumos-demo.xlsx
+            python3 tests/probe_release_reports.py app/build/outputs/apk/pilot/app-pilot.apk
             adb install -r app/build/outputs/apk/pilot/app-pilot.apk
             adb shell am start -W -n bo.soboce.comedor.piloto/bo.soboce.comedor.MainActivity
             adb install -r app/build/outputs/apk/frigor/app-frigor.apk
@@ -130,6 +131,7 @@ jobs:
             app/build/reports/ui/
             app/build/reports/pdf/
             app/build/reports/excel/
+            app/build/reports/release-probe/result.json
             billing/build/reports/androidTests/
             licensing/build/reports/androidTests/
             worker/build/reports/androidTests/
