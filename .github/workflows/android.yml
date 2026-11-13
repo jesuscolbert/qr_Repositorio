@@ -106,7 +106,7 @@ jobs:
             mkdir -p app/build/reports/ui
             gradle :app:connectedDebugAndroidTest --console=plain || { adb pull /sdcard/Download/soboce-design app/build/reports/ui/; mkdir -p app/build/reports/pdf; adb pull /sdcard/Download/soboce-pdf app/build/reports/pdf/; exit 1; }
             mkdir -p app/build/reports/pdf
-            adb pull /sdcard/Download/soboce-pdf app/build/reports/pdf/
+            python3 tests/pull_android_artifacts.py soboce-pdf app/build/reports/pdf/
             python3 tests/check_qr_pdf.py app/build/reports/pdf/soboce-pdf
             gradle :billing:connectedDebugAndroidTest :licensing:connectedDebugAndroidTest --console=plain || { adb pull /sdcard/Download/colbert-billing-design app/build/reports/ui/; exit 1; }
             gradle :worker:connectedDebugAndroidTest --console=plain || { adb pull /sdcard/Download/worker-design app/build/reports/ui/; exit 1; }
@@ -124,7 +124,7 @@ jobs:
             adb pull /sdcard/Download/soboce-design app/build/reports/ui/
             adb pull /sdcard/Download/colbert-billing-design app/build/reports/ui/
             mkdir -p app/build/reports/pdf
-            adb pull /sdcard/Download/soboce-pdf app/build/reports/pdf/
+            python3 tests/pull_android_artifacts.py soboce-pdf app/build/reports/pdf/
       - uses: actions/upload-artifact@v4
         if: always()
         with:

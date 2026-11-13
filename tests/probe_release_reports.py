@@ -47,7 +47,7 @@ def main():
             try:
                 with urllib.request.urlopen('http://127.0.0.1:18787/health',timeout=2) as r:health=json.load(r)
                 break
-            except (urllib.error.URLError,TimeoutError):
+            except (urllib.error.URLError,TimeoutError,ConnectionError):
                 if attempt==19:raise
                 time.sleep(1)
         assert health['reportsProtocol']==1 and health['appVersion']=='1.12.1-piloto'
