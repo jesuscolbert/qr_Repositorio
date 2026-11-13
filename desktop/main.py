@@ -14,7 +14,7 @@ from colbert_license import LicenseClient, LicenseBlocked
 from configuration import read
 from reports_client import ReportsClient, save_workbook
 
-VERSION = '1.0.0'
+VERSION = '1.0.1'
 BG, INK, MUTED, BLUE = '#f1f5fb', '#102039', '#536580', '#1468d4'
 ALL = 'Todas las plantas'
 
@@ -25,7 +25,7 @@ class Viewer:
         self.last_report, self.clients = None, {}
         self.folder = Path(os.environ.get('LOCALAPPDATA', str(Path.home()))) / 'Colbert' / 'ComedorReportes'
         self.companies = {c['name']:c for c in config['companies']}
-        root.title('Colbert · Reportes del comedor')
+        root.title('Colbert · Reportes del comedor '+VERSION)
         width=min(1180,root.winfo_screenwidth()-60);height=min(800,root.winfo_screenheight()-100)
         root.geometry(f'{width}x{height}+20+20'); root.minsize(900, 600); root.configure(bg=BG)
         style = ttk.Style(root); style.theme_use('clam')

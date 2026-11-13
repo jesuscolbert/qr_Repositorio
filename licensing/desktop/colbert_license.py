@@ -18,8 +18,13 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric import ec
 
 OFFLINE_MS = 86_400_000
+USER_AGENT = 'Colbert-Licencias/1.0'
 
 class LicenseBlocked(RuntimeError):
+    pass
+
+class LicenseUnavailable(LicenseBlocked):
+    """Permission could not be validated; this is not evidence of an unpaid invoice."""
     pass
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -67,7 +72,8 @@ class LicenseClient:
     def _post(self, route, data):
         req = urllib.request.Request(self.config['url'].rstrip('/') + route,
             data=json.dumps(data).encode('utf-8'), method='POST',
-            headers={'Authorization': 'Bearer ' + self.config['token'], 'Content-Type': 'application/json'})
+            headers={'Authorization': 'Bearer ' + self.config['token'], 'Content-Type': 'application/json',
+                     'Accept': 'application/json', 'User-Agent': USER_AGENT, 'Cache-Control': 'no-store'})
         with self.opener.open(req, timeout=12) as response:
             raw = response.read(4 * 1024 * 1024 + 1)
             if len(raw) > 4 * 1024 * 1024:
@@ -107,15 +113,34 @@ class LicenseClient:
             return False
 
     def require_access(self):
+        problem = None
         try:
             state = self._load()
             due = not self.allowed() or time.monotonic() - state.get('monotonic', 0) >= 60
             if due:
                 self.refresh()
-        except (urllib.error.URLError, TimeoutError, OSError):
-            pass  # Only an unexpired, verified cached permit can survive a network outage.
-        if not self.allowed():
-            raise LicenseBlocked('Licencia pausada. Renueva el pago o conecta con el servidor de permisos.')
+        except urllib.error.HTTPError as exc:
+            problem = f'Colbert Cobros no pudo validar esta computadora (HTTP {exc.code}). Revisa la conexión y el servidor de permisos. Este error no confirma una deuda.'
+        except (urllib.error.URLError, TimeoutError):
+            problem = 'No se pudo conectar con Colbert Cobros para validar esta computadora. Enciende su servidor y vuelve a actualizar. Esto no significa que debas pagar otra vez.'
+        except OSError:
+            problem = 'No se pudo leer o guardar la validación en esta computadora. Comprueba el acceso a su carpeta de datos; el pago no se ha modificado.'
+        except (KeyError, ValueError, TypeError, InvalidSignature):
+            raise LicenseUnavailable('No se pudo verificar la respuesta de Colbert Cobros. Revisa la configuración del visor; no se ha confirmado un problema de pago.') from None
+        # A network outage cannot extend a permit, discard a signed denial, or invent an approval.
+        if self.allowed():
+            return
+        if problem:
+            raise LicenseUnavailable(problem)
+        try:
+            claims = self._claims(self._load())
+            if claims.get('allowed') is False and claims.get('reason') == 'payment_due':
+                raise LicenseBlocked('Colbert Cobros todavía no confirma el acceso pagado de esta empresa. Si ya pagaste, comprueba que se haya aprobado en su contrato; no hagas otro pago por abrir el visor.')
+            if claims.get('allowed') is False and claims.get('reason') == 'suspended':
+                raise LicenseBlocked('El administrador suspendió el acceso de esta empresa en Colbert Cobros. Debe reactivarlo allí; no es un cobro adicional de Windows.')
+        except (KeyError, ValueError, TypeError, OSError, InvalidSignature):
+            pass
+        raise LicenseUnavailable('Esta computadora necesita validar su permiso con Colbert Cobros. Enciende el servidor y actualiza el reporte. El visor utiliza el mismo contrato de la app.')
 
     def submit_receipt(self, invoice_id, image_file, note='', request_id=None):
         raw = Path(image_file).read_bytes()

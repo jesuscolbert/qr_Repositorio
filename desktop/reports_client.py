@@ -29,7 +29,8 @@ class ReportsClient:
         envelope = dict(time=now, nonce=nonce, payload=payload,
                         signature=mac(self.company['reportKey'], f'request|{now}|{nonce}|{payload}'))
         req = urllib.request.Request(self.company['url'] + '/reports', data=json.dumps(envelope).encode(),
-            headers={'Content-Type':'application/json', 'Cache-Control':'no-store'}, method='POST')
+            headers={'Content-Type':'application/json', 'Accept':'application/json',
+                     'User-Agent':'Colbert-Reportes/1.0.1', 'Cache-Control':'no-store'}, method='POST')
         try:
             with self.opener.open(req, timeout=45 if export else 12) as response:
                 raw = response.read(LIMIT+1)

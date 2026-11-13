@@ -15,7 +15,7 @@ def main():
         key=hmac.new(network['networkKey'].encode(),(cluster+'|desktop-reports-v1').encode(),hashlib.sha256).hexdigest()
         permission=json.loads((ROOT/f'private/billing-network/client-{identity}.json').read_text(encoding='utf-8'))
         companies.append(dict(id=identity,name=identity.upper(),url=network['url'],reportKey=key,plants=json.loads(network['seed'])['plants'],license=permission))
-    target=ROOT/'private/Colbert-Reportes-1.0.0/Colbert-Reportes-1.0.0.exe';target.parent.mkdir(parents=True,exist_ok=True)
+    target=ROOT/'private/Colbert-Reportes-1.0.1/Colbert-Reportes-1.0.1.exe';target.parent.mkdir(parents=True,exist_ok=True)
     append(Path(sys.argv[1]),target,dict(version=1,companies=companies))
     print(json.dumps({'file':str(target),'bytes':target.stat().st_size,'sha256':hashlib.sha256(target.read_bytes()).hexdigest()}))
 if __name__=='__main__':main()

@@ -6,6 +6,8 @@ Actualizar los encargados a 1.12.0 y mantener al menos uno conectado en la empre
 
 El permiso utiliza el contrato de comedor de cada empresa en Colbert Cobros. Se requiere la primera validación y luego se respeta el máximo existente de 24 horas sin validación, sin superar el período pagado. La exportación requiere conexión al comedor y permiso vigente.
 
+La versión 1.0.1 identifica las conexiones de Windows como cliente Colbert para evitar el rechazo del identificador genérico de Python en la entrada de Cloudflare. Los fallos de conexión o de validación no se presentan como pagos pendientes. Solo una respuesta firmada de Colbert Cobros puede indicar deuda o suspensión; un error de red no cambia el contrato ni extiende el permiso guardado.
+
 Excel se genera en el teléfono con dos hojas, Resumen y Entregas. Se exporta la selección completa, aunque la tabla de pantalla muestre como máximo 200 filas diarias o 100 mensuales. Incluye posibles duplicados señalados, precios pendientes en blanco e identificadores como texto.
 
 ## Construcción y configuración privada

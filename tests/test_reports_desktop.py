@@ -19,6 +19,16 @@ def config():
     return dict(version=1,companies=[dict(id='soboce',name='SOBOCE',url='https://comedor.colbert2027.shop',reportKey='a'*64,license=dict(contractId='soboce-comedor',productId='soboce-comedor'))])
 
 class ReportsTests(unittest.TestCase):
+    def test_reports_identify_the_application_to_the_gateway(self):
+        client=ReportsClient(config()['companies'][0])
+        def gateway(request, timeout):
+            self.assertEqual(request.get_header('User-agent'),'Colbert-Reportes/1.0.1')
+            self.assertEqual(request.get_header('Cache-control'),'no-store')
+            envelope=json.loads(request.data);payload=json.dumps(dict(ok=True,serverTime=int(time.time()*1000),items=[]))
+            return io.BytesIO(json.dumps(dict(payload=payload,signature=mac(client.company['reportKey'],'reply|'+envelope['nonce']+'|'+payload))).encode())
+        with patch.object(client.opener,'open',side_effect=gateway):
+            result=client.request(dict(period='day',date='2026-11-13',month='2026-11',plant=''))
+        self.assertEqual(result['items'],[])
     def test_appended_configuration_keeps_executable_and_rejects_admin_secrets(self):
         with tempfile.TemporaryDirectory() as d:
             exe=Path(d)/'base.exe';out=Path(d)/'private.exe';exe.write_bytes(b'MZfake-generic-build');append(exe,out,config());self.assertTrue(out.read_bytes().startswith(exe.read_bytes()));self.assertEqual(read(out),config())
