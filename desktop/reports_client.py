@@ -12,6 +12,7 @@ import urllib.request
 import urllib.error
 import zipfile
 from colbert_license import NoRedirect, LicenseBlocked
+from executive_excel import executive_workbook
 
 LIMIT = 30 * 1024 * 1024
 
@@ -30,13 +31,17 @@ class ReportsClient:
                         signature=mac(self.company['reportKey'], f'request|{now}|{nonce}|{payload}'))
         req = urllib.request.Request(self.company['url'] + '/reports', data=json.dumps(envelope).encode(),
             headers={'Content-Type':'application/json', 'Accept':'application/json',
-                     'User-Agent':'Colbert-Reportes/1.0.1', 'Cache-Control':'no-store'}, method='POST')
+                     'User-Agent':'Colbert-Reportes/1.1.0', 'Cache-Control':'no-store'}, method='POST')
         try:
             with self.opener.open(req, timeout=45 if export else 12) as response:
                 raw = response.read(LIMIT+1)
         except urllib.error.HTTPError as e:
-            if e.code in (400, 404, 405):
-                raise RuntimeError('Actualiza los encargados a 1.12.0. Comprueba también la hora automática y la configuración del visor.') from None
+            if e.code == 400:
+                raise RuntimeError('El túnel responde, pero el servidor rechazó la consulta de reportes (HTTP 400). Se necesita revisar la conexión con el teléfono servidor; este error no confirma falta de pago ni una versión antigua.') from None
+            if e.code in (404,405):
+                raise RuntimeError(f'El servidor que respondió no ofrece la ruta de reportes (HTTP {e.code}). Comprueba la versión del teléfono servidor activo.') from None
+            if e.code in (401,403):
+                raise RuntimeError(f'El acceso al túnel fue rechazado (HTTP {e.code}). No se pudo consultar el reporte.') from None
             raise RuntimeError(f'Comedor sin conexión (HTTP {e.code}). Debe haber un encargado conectado en esta empresa.') from None
         if len(raw) > LIMIT:
             raise ValueError('El reporte es demasiado grande. Elige un período menor.')
@@ -66,7 +71,7 @@ def workbook_bytes(report):
     return raw
 
 def save_workbook(path, report):
-    data = workbook_bytes(report)
+    data = executive_workbook(workbook_bytes(report),report)
     path = Path(path)
     temporary = path.with_name(path.name+'.'+secrets.token_hex(4)+'.tmp')
     try:

@@ -14,7 +14,7 @@ from colbert_license import LicenseClient, LicenseBlocked
 from configuration import read
 from reports_client import ReportsClient, save_workbook
 
-VERSION = '1.0.1'
+VERSION = '1.1.0'
 BG, INK, MUTED, BLUE = '#f1f5fb', '#102039', '#536580', '#1468d4'
 ALL = 'Todas las plantas'
 
@@ -37,8 +37,8 @@ class Viewer:
         style.configure('Treeview.Heading', background=INK, foreground='white', padding=(8,10), font=('Segoe UI',10,'bold'))
         header=tk.Frame(root,bg=INK,padx=28,pady=12);header.pack(fill='x')
         tk.Label(header,text='COLBERT / COMEDOR',bg=INK,fg='#9fe5c3',font=('Segoe UI',11,'bold')).pack(anchor='w')
-        tk.Label(header,text='Reportes de entregas',bg=INK,fg='white',font=('Segoe UI',22,'bold')).pack(anchor='w',pady=(4,0))
-        tk.Label(header,text='Consulta de SOBOCE y FRIGOR · Solo lectura',bg=INK,fg='#b9c7df',font=('Segoe UI',11)).pack(anchor='w')
+        tk.Label(header,text='Control del comedor',bg=INK,fg='white',font=('Segoe UI',22,'bold')).pack(anchor='w',pady=(4,0))
+        tk.Label(header,text='SOBOCE y FRIGOR · Supervisión del negocio · Solo lectura',bg=INK,fg='#b9c7df',font=('Segoe UI',11)).pack(anchor='w')
         body=ttk.Frame(root,padding=(24,16));body.pack(fill='both',expand=True)
         filters=ttk.Frame(body);filters.pack(fill='x')
         self.company=tk.StringVar(value=next(iter(self.companies)));self.plant=tk.StringVar(value=ALL);self.period=tk.StringVar(value='Diario')
@@ -48,7 +48,7 @@ class Viewer:
             if col==1:self.plant_box=box
         cell=ttk.Frame(filters);cell.grid(row=0,column=3,sticky='w');ttk.Label(cell,text='Fecha (AAAA-MM-DD)').pack(anchor='w',pady=(0,5));entry=ttk.Entry(cell,textvariable=self.date,width=15);entry.pack();entry.bind('<Return>',lambda e:self.changed());self.date.trace_add('write',lambda *args:self.invalidate_date())
         actions=ttk.Frame(body);actions.pack(fill='x',pady=(18,10))
-        self.export_button=ttk.Button(actions,text='Exportar día a Excel (.xlsx)',style='Accent.TButton',command=self.export);self.export_button.pack(side='left')
+        self.export_button=ttk.Button(actions,text='Excel ejecutivo del día',style='Accent.TButton',command=self.export);self.export_button.pack(side='left')
         self.refresh_button=ttk.Button(actions,text='Actualizar reporte',command=self.refresh);self.refresh_button.pack(side='left',padx=12)
         ttk.Label(actions,text='Actualización automática cada 15 s').pack(side='right')
         self.status=tk.StringVar(value='Conectando al comedor…');ttk.Label(body,textvariable=self.status,wraplength=1080,foreground=MUTED).pack(fill='x',pady=(0,12))
@@ -82,7 +82,7 @@ class Viewer:
         company=self.companies[self.company.get()]
         plants=[ALL]+company.get('plants',[]);self.plant_box.configure(values=plants)
         if self.plant.get() not in plants:self.plant.set(ALL)
-        self.export_button.configure(text='Exportar '+('día' if self.period.get()=='Diario' else 'mes')+' a Excel (.xlsx)',state='disabled')
+        self.export_button.configure(text='Excel ejecutivo del '+('día' if self.period.get()=='Diario' else 'mes'),state='disabled')
         self.status.set('Consultando la selección…');self.refresh()
 
     def selection(self):
@@ -124,7 +124,7 @@ class Viewer:
                 self.status.set(message+' Último reporte recibido: '+stamp+'.');self.export_button.configure(state='disabled')
                 if export:messagebox.showerror('No se pudo exportar',message)
             elif export:
-                self.status.set('Excel guardado: '+Path(path).name);self.export_button.configure(state='normal');messagebox.showinfo('Excel guardado','El archivo .xlsx está listo.\n'+str(path))
+                self.status.set('Excel ejecutivo guardado: '+Path(path).name);self.export_button.configure(state='normal');messagebox.showinfo('Excel ejecutivo guardado','Resumen con indicadores y gráficos, más todas las entregas con filtros.\n\n'+str(path))
             else:self.draw(report)
         except queue.Empty:pass
         if not self.closed:self.root.after(100,self.receive)

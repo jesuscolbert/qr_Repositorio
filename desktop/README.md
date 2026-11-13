@@ -8,7 +8,11 @@ El permiso utiliza el contrato de comedor de cada empresa en Colbert Cobros. Se 
 
 La versión 1.0.1 identifica las conexiones de Windows como cliente Colbert para evitar el rechazo del identificador genérico de Python en la entrada de Cloudflare. Los fallos de conexión o de validación no se presentan como pagos pendientes. Solo una respuesta firmada de Colbert Cobros puede indicar deuda o suspensión; un error de red no cambia el contrato ni extiende el permiso guardado.
 
-Excel se genera en el teléfono con dos hojas, Resumen y Entregas. Se exporta la selección completa, aunque la tabla de pantalla muestre como máximo 200 filas diarias o 100 mensuales. Incluye posibles duplicados señalados, precios pendientes en blanco e identificadores como texto.
+En la versión 1.1.0, Windows convierte el archivo completo y autenticado del teléfono en un Excel ejecutivo. Resumen presenta indicadores, gráficos por comida y planta, importes registrados y entregas sin tarifa. Entregas conserva todos los registros con filtros, encabezados inmovilizados y alertas de revisión. Se exporta la selección completa, aunque la tabla de pantalla muestre como máximo 200 filas diarias o 100 mensuales. Los posibles duplicados se incluyen y se señalan; los precios pendientes quedan en blanco y los identificadores permanecen como texto. El importe registrado no se presenta como cobro ni utilidad.
+
+Los conteos, trabajadores distintos e importes se reconcilian con el detalle antes de guardar. El archivo conserva fórmulas y valores calculados, gráficos nativos y áreas de impresión. El gráfico de plantas muestra como máximo las ocho con más entregas, indicando ese límite; la tabla y el detalle incluyen todas. El conteo de trabajadores distintos es el valor del corte exportado. La plantilla pública contiene únicamente datos ficticios y se creó con artifact-tool; el ejecutable la completa con la biblioteca estándar de Python.
+
+Un HTTP 400 indica que el servidor rechazó la consulta. Por sí solo no demuestra una licencia vencida ni una versión antigua. El visor distingue este rechazo de una respuesta de permisos firmada; no se modifican contratos para resolver fallos de red.
 
 ## Construcción y configuración privada
 

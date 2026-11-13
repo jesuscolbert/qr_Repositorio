@@ -22,7 +22,7 @@ class ReportsTests(unittest.TestCase):
     def test_reports_identify_the_application_to_the_gateway(self):
         client=ReportsClient(config()['companies'][0])
         def gateway(request, timeout):
-            self.assertEqual(request.get_header('User-agent'),'Colbert-Reportes/1.0.1')
+            self.assertEqual(request.get_header('User-agent'),'Colbert-Reportes/1.1.0')
             self.assertEqual(request.get_header('Cache-control'),'no-store')
             envelope=json.loads(request.data);payload=json.dumps(dict(ok=True,serverTime=int(time.time()*1000),items=[]))
             return io.BytesIO(json.dumps(dict(payload=payload,signature=mac(client.company['reportKey'],'reply|'+envelope['nonce']+'|'+payload))).encode())
@@ -51,8 +51,18 @@ class ReportsTests(unittest.TestCase):
             for name in ['[Content_Types].xml','xl/workbook.xml','xl/worksheets/sheet1.xml','xl/worksheets/sheet2.xml']:z.writestr(name,'<test/>')
         raw=data.getvalue();report=dict(file=base64.b64encode(raw).decode(),sha256=hashlib.sha256(raw).hexdigest());self.assertEqual(workbook_bytes(report),raw)
         with tempfile.TemporaryDirectory() as d:
-            path=Path(d)/'reporte.xlsx';save_workbook(path,report);self.assertEqual(path.read_bytes(),raw)
+            path=Path(d)/'reporte.xlsx'
+            with patch('reports_client.executive_workbook',return_value=raw):save_workbook(path,report)
+            self.assertEqual(path.read_bytes(),raw)
             with self.assertRaises(ValueError):save_workbook(path,dict(report,sha256='0'*64))
             self.assertEqual(path.read_bytes(),raw);self.assertEqual(len(list(Path(d).iterdir())),1)
+
+    def test_http400_is_not_misreported_as_payment_or_proven_outdated_app(self):
+        import urllib.error
+        client=ReportsClient(config()['companies'][0])
+        with patch.object(client.opener,'open',side_effect=urllib.error.HTTPError('url',400,'bad',{},None)):
+            with self.assertRaisesRegex(RuntimeError,'HTTP 400') as error:client.request({})
+        self.assertNotIsInstance(error.exception,LicenseBlocked)
+        self.assertNotIn('Actualiza los encargados',str(error.exception))
 
 if __name__=='__main__':unittest.main()
