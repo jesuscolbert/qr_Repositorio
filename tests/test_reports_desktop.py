@@ -22,7 +22,7 @@ class ReportsTests(unittest.TestCase):
     def test_reports_identify_the_application_to_the_gateway(self):
         client=ReportsClient(config()['companies'][0])
         def gateway(request, timeout):
-            self.assertEqual(request.get_header('User-agent'),'Colbert-Reportes/1.1.0')
+            self.assertEqual(request.get_header('User-agent'),'Colbert-Reportes/1.2.0')
             self.assertEqual(request.get_header('Cache-control'),'no-store')
             envelope=json.loads(request.data);payload=json.dumps(dict(ok=True,serverTime=int(time.time()*1000),items=[]))
             return io.BytesIO(json.dumps(dict(payload=payload,signature=mac(client.company['reportKey'],'reply|'+envelope['nonce']+'|'+payload))).encode())

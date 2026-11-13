@@ -128,7 +128,7 @@ def chart_data(raw, labels, counts, cat_formula, val_formula, horizontal=False):
         root.find('.//c:valAx/c:axPos',NS).set('val','b')
     return xml(root)
 
-def executive_workbook(raw, report):
+def validated_source(raw, report):
     context, records=read_source(raw)
     count=len(records);workers=len({r[2] for r in records});pending=sum(r[12]=='Sí' for r in records)
     conflicts=sum(bool(r[11]) for r in records);total=sum((r[7] for r in records if r[7] is not None),Decimal(0))
@@ -138,6 +138,12 @@ def executive_workbook(raw, report):
     meal=Counter(r[4] for r in records)
     if any(report.get('byMeal',{}).get(m,0)!=meal[m] for m in MEALS):
         raise ValueError('El desglose por comida no coincide con las entregas.')
+    return context,records,meal,total
+
+
+def executive_workbook(raw, report):
+    context,records,meal,total=validated_source(raw,report)
+    count=len(records);workers=report['workers'];pending=report['unpriced'];conflicts=report['conflicts']
     groups=defaultdict(list)
     for r in records:groups[r[5] or 'Sin planta'].append(r)
     plants=sorted(groups,key=lambda p:(-len(groups[p]),p.casefold()))

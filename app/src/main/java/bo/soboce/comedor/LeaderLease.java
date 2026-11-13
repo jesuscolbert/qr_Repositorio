@@ -15,5 +15,5 @@ final class LeaderLease {
     }
     synchronized boolean leading(long now){return now<until&&owner.equals(device)&&ownerBoot.equals(boot);}
     synchronized boolean known(long now){return now<until&&!owner.isEmpty();}
-    synchronized JSONObject request(String action) throws Exception{return new JSONObject().put("action",action).put("device",device).put("boot",boot).put("epoch",epoch);}
+    synchronized JSONObject request(String action) throws Exception{return new JSONObject().put("action",action).put("device",device).put("boot",boot).put("epoch",epoch).put("reportsProtocol",1);}
 }

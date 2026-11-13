@@ -16,6 +16,9 @@ from executive_excel import executive_workbook
 
 LIMIT = 30 * 1024 * 1024
 
+class ReportUnavailable(RuntimeError):
+    """Transport or server availability failure; a verified local copy may be used."""
+
 def mac(key, message):
     return hmac.new(key.encode(), message.encode(), hashlib.sha256).hexdigest()
 
@@ -25,29 +28,37 @@ class ReportsClient:
         self.opener = urllib.request.build_opener(NoRedirect)
 
     def request(self, selection, export=False):
+        return self._request(selection,export)[0]
+
+    def snapshot(self, selection, timeout=15):
+        return self._request(selection,True,timeout)[1]
+
+    def _request(self, selection, export=False, timeout=None):
         payload = json.dumps(dict(selection, action='export' if export else 'report'), ensure_ascii=False, separators=(',', ':'))
         nonce, now = secrets.token_hex(32), int(time.time()*1000)
         envelope = dict(time=now, nonce=nonce, payload=payload,
                         signature=mac(self.company['reportKey'], f'request|{now}|{nonce}|{payload}'))
         req = urllib.request.Request(self.company['url'] + '/reports', data=json.dumps(envelope).encode(),
             headers={'Content-Type':'application/json', 'Accept':'application/json',
-                     'User-Agent':'Colbert-Reportes/1.1.0', 'Cache-Control':'no-store'}, method='POST')
+                     'User-Agent':'Colbert-Reportes/1.2.0', 'Cache-Control':'no-store'}, method='POST')
         try:
-            with self.opener.open(req, timeout=45 if export else 12) as response:
+            with self.opener.open(req, timeout=timeout or (45 if export else 12)) as response:
                 raw = response.read(LIMIT+1)
         except urllib.error.HTTPError as e:
             if e.code == 400:
-                raise RuntimeError('El túnel responde, pero el servidor rechazó la consulta de reportes (HTTP 400). Se necesita revisar la conexión con el teléfono servidor; este error no confirma falta de pago ni una versión antigua.') from None
+                raise ReportUnavailable('El servidor rechazó la consulta (HTTP 400). Se volverá a comprobar la conexión; este error no confirma falta de pago.') from None
             if e.code in (404,405):
-                raise RuntimeError(f'El servidor que respondió no ofrece la ruta de reportes (HTTP {e.code}). Comprueba la versión del teléfono servidor activo.') from None
+                raise ReportUnavailable(f'El servidor no ofrece reportes compatibles (HTTP {e.code}).') from None
             if e.code in (401,403):
                 raise RuntimeError(f'El acceso al túnel fue rechazado (HTTP {e.code}). No se pudo consultar el reporte.') from None
-            raise RuntimeError(f'Comedor sin conexión (HTTP {e.code}). Debe haber un encargado conectado en esta empresa.') from None
+            raise ReportUnavailable(f'Sin conexión con un encargado compatible (HTTP {e.code}).') from None
+        except (urllib.error.URLError,TimeoutError,ConnectionError,OSError):
+            raise ReportUnavailable('No se pudo conectar con el comedor. Se volverá a intentar automáticamente.') from None
         if len(raw) > LIMIT:
             raise ValueError('El reporte es demasiado grande. Elige un período menor.')
-        return self.verify(raw, nonce)
+        return self.verify(raw,nonce),dict(request=envelope,response=raw.decode('utf-8'))
 
-    def verify(self, raw, nonce):
+    def verify(self, raw, nonce, historical=False):
         result = json.loads(raw)
         payload = result['payload']
         if not hmac.compare_digest(mac(self.company['reportKey'], 'reply|'+nonce+'|'+payload), result['signature']):
@@ -56,8 +67,10 @@ class ReportsClient:
         if not report.get('ok'):
             if report.get('error') == 'license':
                 raise LicenseBlocked('El encargado debe actualizar su permiso en Licencia y pagos. Enciende Colbert Cobros y pulsa Comprobar acceso en el teléfono.')
-            raise RuntimeError('El comedor está cambiando de servidor. Se volverá a consultar automáticamente.')
-        if abs(time.time()*1000-report['serverTime']) > 180000:
+            if report.get('error')=='leader':raise ReportUnavailable('El comedor está cambiando de servidor. Se volverá a consultar automáticamente.')
+            raise RuntimeError('El servidor no pudo preparar el reporte. No se sustituyeron los datos guardados.')
+        stamp=report.get('serverTime')
+        if not isinstance(stamp,(int,float)) or not 0<stamp<=time.time()*1000+180000 or (not historical and abs(time.time()*1000-stamp)>180000):
             raise ValueError('El reporte no es reciente. Comprueba la hora automática de ambos equipos.')
         return report
 

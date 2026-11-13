@@ -2,7 +2,7 @@ plugins { id 'com.android.application' }
 android {
  namespace 'bo.soboce.comedor'
  compileSdk 35
- defaultConfig { applicationId 'bo.soboce.comedor'; minSdk 26; targetSdk 35; versionCode 16; versionName '1.12.1' }
+ defaultConfig { applicationId 'bo.soboce.comedor'; minSdk 26; targetSdk 35; versionCode 17; versionName '1.12.2' }
  defaultConfig { testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner' }
  packaging { jniLibs { useLegacyPackaging = true; keepDebugSymbols += ['**/libcloudflared.so'] } }
  def signingFile = rootProject.file('private/signing.properties')

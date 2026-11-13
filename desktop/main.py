@@ -13,8 +13,9 @@ import urllib.error
 from colbert_license import LicenseClient, LicenseBlocked
 from configuration import read
 from reports_client import ReportsClient, save_workbook
+from report_snapshots import ReportSession
 
-VERSION = '1.1.0'
+VERSION = '1.2.0'
 BG, INK, MUTED, BLUE = '#f1f5fb', '#102039', '#536580', '#1468d4'
 ALL = 'Todas las plantas'
 
@@ -22,7 +23,7 @@ class Viewer:
     def __init__(self, root, config, demo=False):
         self.root, self.config, self.demo = root, config, demo
         self.results, self.busy, self.generation, self.closed = queue.Queue(), False, 0, False
-        self.last_report, self.clients = None, {}
+        self.last_report, self.clients, self.sessions = None, {}, {}
         self.folder = Path(os.environ.get('LOCALAPPDATA', str(Path.home()))) / 'Colbert' / 'ComedorReportes'
         self.companies = {c['name']:c for c in config['companies']}
         root.title('Colbert · Reportes del comedor '+VERSION)
@@ -104,7 +105,9 @@ class Viewer:
         def work():
             try:
                 if c['id'] not in self.clients:self.clients[c['id']]=LicenseClient(c['license'],self.folder/(c['id']+'-license.json'))
-                license=self.clients[c['id']];license.require_access();report=ReportsClient(c).request(selection,export)
+                license=self.clients[c['id']]
+                if c['id'] not in self.sessions:self.sessions[c['id']]=ReportSession(c,license,self.folder/'reportes-guardados')
+                report=self.sessions[c['id']].load(selection,export)
                 # Recheck after a long export before saving the protected report.
                 license.require_access()
                 if export:save_workbook(path,report)
@@ -124,7 +127,8 @@ class Viewer:
                 self.status.set(message+' Último reporte recibido: '+stamp+'.');self.export_button.configure(state='disabled')
                 if export:messagebox.showerror('No se pudo exportar',message)
             elif export:
-                self.status.set('Excel ejecutivo guardado: '+Path(path).name);self.export_button.configure(state='normal');messagebox.showinfo('Excel ejecutivo guardado','Resumen con indicadores y gráficos, más todas las entregas con filtros.\n\n'+str(path))
+                detail=('Copia guardada · Datos hasta '+self.timestamp(report['serverTime']) if report.get('_cached') else 'Datos recibidos: '+self.timestamp(report['serverTime']))
+                self.status.set('Excel ejecutivo guardado: '+Path(path).name+' · '+detail);self.export_button.configure(state='normal');messagebox.showinfo('Excel ejecutivo guardado',detail+'\nResumen con indicadores y gráficos, más todas las entregas con filtros.\n\n'+str(path))
             else:self.draw(report)
         except queue.Empty:pass
         if not self.closed:self.root.after(100,self.receive)
@@ -137,7 +141,9 @@ class Viewer:
         self.meals.set('     '.join(m.title()+'  '+str(report['byMeal'].get(m,0)) for m in ('desayuno','almuerzo','cena','dieta')))
         self.tree.delete(*self.tree.get_children())
         for i,r in enumerate(report['items']):self.tree.insert('', 'end', values=[r.get(c,'') for c in self.tree['columns']], tags=(('alternate',) if i%2 else ())+ (('review',) if r.get('revision') else ()))
-        self.status.set(('DEMOSTRACIÓN · ' if self.demo else 'Conectado · ')+'Datos recibidos: '+self.timestamp(report['serverTime'])+' (Bolivia)')
+        if report.get('_cached'):
+            self.status.set('COPIA GUARDADA · Datos hasta '+self.timestamp(report['serverTime'])+' (Bolivia). Sin conexión en vivo; se reintentará automáticamente. Puedes exportar esta copia a Excel.')
+        else:self.status.set(('DEMOSTRACIÓN · ' if self.demo else 'Conectado · ')+'Datos recibidos: '+self.timestamp(report['serverTime'])+' (Bolivia)'+(' · No se pudo guardar una copia en esta PC.' if report.get('_cacheSaved') is False else ''))
         self.footer.set(f"Mostrando {len(report['items'])} de {report['count']} entregas. Excel incluye todas. Pueden faltar teléfonos sin sincronizar.")
         plants=[ALL]+report.get('plants',[]);self.companies[self.company.get()]['plants']=report.get('plants',[]);self.plant_box.configure(values=plants);self.export_button.configure(state='normal')
 

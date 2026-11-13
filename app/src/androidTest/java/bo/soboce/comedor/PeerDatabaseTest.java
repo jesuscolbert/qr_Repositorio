@@ -335,6 +335,7 @@ public class PeerDatabaseTest {
     }
     @Test public void leaseUsesMonotonicDeadlineAndFencesLateResponses() throws Exception {
         LeaderLease lease=new LeaderLease("b".repeat(64));JSONObject own=new JSONObject().put("owner",lease.device).put("boot",lease.boot).put("epoch",1).put("remaining",30000);
+        assertEquals(1,lease.request("acquire").getInt("reportsProtocol"));assertEquals(1,lease.request("renew").getInt("reportsProtocol"));
         lease.update(own,1000,2000);assertTrue(lease.leading(2000));assertFalse(lease.leading(28000));
         lease.update(own,1000,32000);assertFalse(lease.leading(32000));
         JSONObject replacement=new JSONObject(own.toString()).put("owner","c".repeat(64)).put("epoch",2);lease.update(replacement,33000,33001);assertFalse(lease.leading(33001));

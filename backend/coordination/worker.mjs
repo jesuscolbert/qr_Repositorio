@@ -1,6 +1,13 @@
 import {transition} from './lease.mjs';
 import {validateWallet,walletOperation} from './wallet.mjs';
 
+export function serverPolicy(env) {
+  const minimumReportsProtocol=Number(env.REQUIRED_REPORTS_PROTOCOL||0);
+  const compatibleDevices=JSON.parse(env.REPORT_COMPAT_DEVICES||'[]');
+  if(![0,1].includes(minimumReportsProtocol)||!Array.isArray(compatibleDevices)||compatibleDevices.length>100||compatibleDevices.some(id=>typeof id!=='string'||!/^[a-f0-9]{64}$/.test(id)))throw Error('Invalid server policy');
+  return {minimumReportsProtocol,compatibleDevices};
+}
+
 export class LeaderLease {
   constructor(ctx, env) { this.ctx = ctx; this.env = env; }
   async fetch(request) {
@@ -10,7 +17,9 @@ export class LeaderLease {
       return Response.json(reply,{headers:{'Cache-Control':'no-store'}});
     }
     const reply = await this.ctx.storage.transaction(async tx => {
-      const next = transition(await tx.get('lease'), input, Date.now());
+      // Never shorten a live lease when enforcing the upgrade. Its old owner
+      // stops at its original deadline before a compatible phone can acquire.
+      const next = transition(await tx.get('lease'), input, Date.now(), serverPolicy(this.env));
       await tx.put('lease', next.state);
       return {...next.reply,walletRevision:await tx.get('walletRevision')||0};
     });
