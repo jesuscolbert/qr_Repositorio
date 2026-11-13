@@ -7,7 +7,12 @@ from pathlib import Path
 import hashlib,hmac,json,os,re,secrets,subprocess,sys,time,urllib.request,urllib.error,xml.etree.ElementTree as ET,zipfile
 
 ROOT=Path(__file__).resolve().parents[1]
-def run(*args):return subprocess.check_output([str(a) for a in args],text=True,encoding='utf-8',stderr=subprocess.STDOUT)
+def run(*args):
+    result=subprocess.run([str(a) for a in args],text=True,encoding='utf-8',stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+    if result.returncode:
+        print(result.stdout[-3000:],flush=True)
+        raise RuntimeError(f'Test tool failed: {Path(str(args[0])).name}, exit {result.returncode}')
+    return result.stdout
 def mac(k,v):return hmac.new(k.encode(),v.encode(),hashlib.sha256).hexdigest()
 def main():
     apk=Path(sys.argv[1]);target=ROOT/'app/build/reports/release-probe';target.mkdir(parents=True,exist_ok=True)
@@ -26,7 +31,10 @@ def main():
             dst.writestr(item,src.read(item.filename))
         dst.writestr('assets/comedor-shared.json',json.dumps(bundle).encode())
     run(tools/'zipalign','-f','4',unsigned,aligned)
-    run(tools/'apksigner','sign','--ks',Path.home()/'.android/debug.keystore','--ks-pass','pass:android','--key-pass','pass:android','--out',test_apk,aligned)
+    # The Gradle action may isolate Android's home; use our own disposable key.
+    test_key=target/'test-key.jks';test_key.unlink(missing_ok=True)
+    run(Path(os.environ['JAVA_HOME'])/'bin/keytool','-genkeypair','-noprompt','-alias','probe','-keyalg','RSA','-keysize','2048','-validity','1','-keystore',test_key,'-storetype','JKS','-storepass','test-only-key','-keypass','test-only-key','-dname','CN=CI Reports Probe')
+    run(tools/'apksigner','sign','--ks',test_key,'--ks-key-alias','probe','--ks-pass','pass:test-only-key','--key-pass','pass:test-only-key','--out',test_apk,aligned)
     with zipfile.ZipFile(apk) as original,zipfile.ZipFile(test_apk) as tested:
         for name in original.namelist():
             if not name.startswith('META-INF/'):assert original.read(name)==tested.read(name)
@@ -70,6 +78,6 @@ def main():
     finally:
         subprocess.run(['adb','shell','am','force-stop',package],capture_output=True)
         subprocess.run(['adb','uninstall',package],capture_output=True)
-        for p in [unsigned,aligned,test_apk,test_apk.with_suffix('.apk.idsig')]:p.unlink(missing_ok=True)
+        for p in [unsigned,aligned,test_apk,test_apk.with_suffix('.apk.idsig'),test_key]:p.unlink(missing_ok=True)
 
 if __name__=='__main__':main()
