@@ -23,6 +23,7 @@ class PeerEngine implements QuorumLog.Network, AutoCloseable {
     private final ExecutorService clients=new ThreadPoolExecutor(4,4,0L,TimeUnit.MILLISECONDS,new ArrayBlockingQueue<>(12),new ThreadPoolExecutor.AbortPolicy());
     private final Map<String,Long> nonces=new LinkedHashMap<>();
     private final Map<String,Long> walletRequests=new LinkedHashMap<>(),walletRates=new LinkedHashMap<>();
+    private final DesktopReports desktopReports=new DesktopReports(this);
     private ServerSocket server;
     volatile boolean closed;
     volatile int connected=1;
@@ -42,11 +43,12 @@ class PeerEngine implements QuorumLog.Network, AutoCloseable {
             s.setSoTimeout(5000);InputStream in=s.getInputStream();ByteArrayOutputStream header=new ByteArrayOutputStream();int b,tail=0;
             while(header.size()<8192&&(b=in.read())!=-1){header.write(b);tail=(tail<<8)|b;if(tail==0x0d0a0d0a)break;}
             PeerConfig.require(tail==0x0d0a0d0a,"Cabecera inválida.");
-            String[] lines=header.toString("US-ASCII").split("\r\n");if(lines[0].equals("GET / HTTP/1.1")||lines[0].equals("GET /health HTTP/1.1")){send(s,200,new JSONObject().put("ok",true).put("service",serviceName).toString());return;}boolean wallet=lines[0].equals("POST /wallet HTTP/1.1");PeerConfig.require(wallet||lines[0].equals("POST /rpc HTTP/1.1"),"Ruta inválida.");int length=-1;
+            String[] lines=header.toString("US-ASCII").split("\r\n");if(lines[0].equals("GET / HTTP/1.1")||lines[0].equals("GET /health HTTP/1.1")){send(s,200,new JSONObject().put("ok",true).put("service",serviceName).toString());return;}boolean wallet=lines[0].equals("POST /wallet HTTP/1.1");PeerConfig.require(wallet||lines[0].equals("POST /reports HTTP/1.1")||lines[0].equals("POST /rpc HTTP/1.1"),"Ruta inválida.");int length=-1;
             for(String line:lines){String lower=line.toLowerCase(Locale.ROOT);PeerConfig.require(!lower.startsWith("transfer-encoding:"),"Codificación inválida.");if(lower.startsWith("content-length:")){PeerConfig.require(length==-1,"Longitud repetida.");length=Integer.parseInt(line.substring(line.indexOf(':')+1).trim());}}
-            PeerConfig.require(length>0&&length<=(wallet?16384:1048576),"Solicitud demasiado grande.");byte[] bytes=new byte[length];int offset=0;
+            PeerConfig.require(length>0&&length<=((wallet||lines[0].equals("POST /reports HTTP/1.1"))?16384:1048576),"Solicitud demasiado grande.");byte[] bytes=new byte[length];int offset=0;
             while(offset<length){int n=in.read(bytes,offset,length-offset);if(n<0)throw new EOFException();offset+=n;}
             JSONObject envelope=new JSONObject(new String(bytes,StandardCharsets.UTF_8));
+            if(lines[0].equals("POST /reports HTTP/1.1")){send(s,200,desktopReports.handle(envelope).toString());return;}
             if(wallet){send(s,200,wallet(envelope).toString());return;}
             if(shared!=null){send(s,200,shared.handle(envelope).toString());return;}
             String payload=envelope.getString("payload"),nonce=envelope.getString("nonce");int source=envelope.getInt("source");long time=envelope.getLong("time");

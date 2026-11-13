@@ -108,6 +108,9 @@ jobs:
             gradle :billing:connectedDebugAndroidTest :licensing:connectedDebugAndroidTest --console=plain || { adb pull /sdcard/Download/colbert-billing-design app/build/reports/ui/; exit 1; }
             gradle :worker:connectedDebugAndroidTest --console=plain || { adb pull /sdcard/Download/worker-design app/build/reports/ui/; exit 1; }
             adb pull /sdcard/Download/worker-design app/build/reports/ui/
+            mkdir -p app/build/reports/excel
+            adb pull /sdcard/Download/soboce-excel app/build/reports/excel/
+            python3 tests/check_excel_export.py app/build/reports/excel/soboce-excel/consumos-demo.xlsx
             adb install -r app/build/outputs/apk/pilot/app-pilot.apk
             adb shell am start -W -n bo.soboce.comedor.piloto/bo.soboce.comedor.MainActivity
             adb install -r app/build/outputs/apk/frigor/app-frigor.apk
@@ -126,6 +129,7 @@ jobs:
             app/build/reports/androidTests/
             app/build/reports/ui/
             app/build/reports/pdf/
+            app/build/reports/excel/
             billing/build/reports/androidTests/
             licensing/build/reports/androidTests/
             worker/build/reports/androidTests/

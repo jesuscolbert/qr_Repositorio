@@ -1,0 +1,31 @@
+package bo.soboce.comedor;
+import org.json.*;
+import org.junit.*;
+import static org.junit.Assert.*;
+import java.io.*;
+import java.util.*;
+import java.util.zip.*;
+import java.nio.charset.StandardCharsets;
+import androidx.test.platform.app.InstrumentationRegistry;
+
+public class ExcelReportTest {
+    static JSONObject row(int i)throws Exception{return new JSONObject().put("fecha",i==0?"2026-11-11":"2026-11-12").put("hora","12:05:09").put("persona","0012345").put("nombre",i==1?"=HYPERLINK(\"https://invalid.example\")":"José & Ana").put("comida","almuerzo").put("planta",i==2?"Sur":"Norte").put("operador","Encargado de prueba").put("precio",12.5).put("precioPendiente",i==3).put("registro","r"+i).put("origen","Prueba").put("revision",i==4?"POSIBLE DUPLICADO":"");}
+    static Map<String,String> contents(byte[] data)throws Exception{Map<String,String> files=new HashMap<>();try(ZipInputStream z=new ZipInputStream(new ByteArrayInputStream(data))){ZipEntry e;while((e=z.getNextEntry())!=null)files.put(e.getName(),new String(z.readAllBytes(),StandardCharsets.UTF_8));}return files;}
+    @Test public void realExcelIncludesAllMonthlyRowsTypedDatesAndUntrustedText()throws Exception{
+        List<JSONObject> records=new ArrayList<>();for(int i=0;i<155;i++)records.add(row(i));JSONObject request=new JSONObject().put("action","report").put("period","month").put("month","2026-11").put("format","xlsx").put("preview",false);
+        JSONObject report=MealReports.build(records,request,"2026-11-12",true);assertEquals(100,report.getJSONArray("items").length());assertEquals(155,report.getJSONArray("exportItems").length());assertEquals(1,report.getInt("workers"));assertEquals(1,report.getInt("conflicts"));assertFalse(report.has("csv"));
+        ByteArrayOutputStream out=new ByteArrayOutputStream();ExcelReport.write(out,report,"EMPRESA DE PRUEBA","Todas las plantas");Map<String,String> files=contents(out.toByteArray());String detail=files.get("xl/worksheets/sheet2.xml");assertNotNull(detail);assertTrue(detail.contains("A1:M156"));assertTrue(detail.contains("0012345"));assertFalse(detail.contains("<f>"));assertTrue(detail.contains("=HYPERLINK"));assertTrue(detail.contains("José &amp; Ana"));assertFalse(detail.contains("r=\"H5\""));assertEquals(156,detail.split("<row ",-1).length-1);
+        File folder=new File(InstrumentationRegistry.getInstrumentation().getTargetContext().getExternalFilesDir(null),"excel-tests");assertTrue(folder.isDirectory()||folder.mkdirs());try(OutputStream f=new FileOutputStream(new File(folder,"consumos-demo.xlsx"))){f.write(out.toByteArray());}PeerDatabaseTest ui=new PeerDatabaseTest();ui.shellUi("mkdir -p /sdcard/Download/soboce-excel");ui.shellUi("cp -r "+folder.getAbsolutePath()+"/. /sdcard/Download/soboce-excel/");
+        JSONObject day=MealReports.build(records,new JSONObject(request.toString()).put("period","day").put("date","2026-11-12").put("plant","Norte"),"2026-11-12",false);assertEquals(153,day.getInt("count"));assertEquals(153,day.getJSONArray("exportItems").length());
+    }
+    @Test public void desktopReadOnlyRouteRejectsReplayMutationWrongKeyAndExpiredPermission()throws Exception{
+        CompaniesTest f=new CompaniesTest();f.setup();try{Companies.install(f.context);f.permission("soboce",true);PeerConfig c=f.config("soboce");try(PeerEngine engine=new PeerEngine(f.context,c){@Override public void close(){super.close();db.close();}}){new PeerDatabaseTest().elect(new PeerEngine[]{engine},0,1);DesktopReports reports=new DesktopReports(engine);engine.start();JSONObject query=new JSONObject().put("action","report").put("period","day").put("date",MealLedger.day(System.currentTimeMillis())).put("plant","");JSONObject signed=sign(reports.key(),query);JSONObject response=post(engine.localPort,signed);assertEquals(0,new JSONObject(response.getString("payload")).getInt("count"));assertEquals(DesktopReports.mac(reports.key(),"reply|"+signed.getString("nonce")+"|"+response.getString("payload")),response.getString("signature"));
+            reject(()->post(engine.localPort,signed));reject(()->post(engine.localPort,sign("0".repeat(64),query)));reject(()->post(engine.localPort,sign(reports.key(),new JSONObject().put("action","scan"))));
+            JSONObject exported=new JSONObject(post(engine.localPort,sign(reports.key(),new JSONObject(query.toString()).put("action","export"))).getString("payload"));assertNotNull(contents(Base64.getDecoder().decode(exported.getString("file"))).get("xl/workbook.xml"));assertFalse(exported.toString().contains(c.raw.getString("networkKey")));
+            f.permission("soboce",false);JSONObject denied=new JSONObject(post(engine.localPort,sign(reports.key(),query)).getString("payload"));assertEquals("license",denied.getString("error"));assertFalse(denied.has("items"));assertEquals(0,new OfflineLedger(engine.db,c).records().size());
+        }}finally{f.cleanup();}
+    }
+    interface Attempt{void run()throws Exception;}static void reject(Attempt a)throws Exception{try{a.run();fail("Access accepted");}catch(IOException expected){}}
+    static JSONObject sign(String key,JSONObject query)throws Exception{long now=System.currentTimeMillis();String nonce=PeerConfig.random(),payload=query.toString();return new JSONObject().put("time",now).put("nonce",nonce).put("payload",payload).put("signature",DesktopReports.mac(key,"request|"+now+"|"+nonce+"|"+payload));}
+    static JSONObject post(int port,JSONObject request)throws Exception{byte[] body=request.toString().getBytes(StandardCharsets.UTF_8);try(java.net.Socket s=new java.net.Socket("127.0.0.1",port)){s.setSoTimeout(10000);OutputStream out=s.getOutputStream();out.write(("POST /reports HTTP/1.1\r\nHost: localhost\r\nContent-Length: "+body.length+"\r\n\r\n").getBytes(StandardCharsets.US_ASCII));out.write(body);out.flush();String response=new String(s.getInputStream().readAllBytes(),StandardCharsets.UTF_8);if(!response.startsWith("HTTP/1.1 200"))throw new IOException("Denied");return new JSONObject(response.substring(response.indexOf("\r\n\r\n")+4));}}
+}

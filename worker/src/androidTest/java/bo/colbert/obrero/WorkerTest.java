@@ -39,4 +39,8 @@ public class WorkerTest {
   WorkerStore store=new WorkerStore(context);store.reset();store.put("certificate","test-private-credential");assertEquals("test-private-credential",store.get("certificate"));assertFalse(store.prefs.getAll().toString().contains("test-private-credential"));
   shell("locksettings set-pin 2580");try{assertTrue(((KeyguardManager)context.getSystemService(Context.KEYGUARD_SERVICE)).isDeviceSecure());KeyPair pair=store.identity();assertNull(pair.getPrivate().getEncoded());KeyInfo info=KeyFactory.getInstance("EC","AndroidKeyStore").getKeySpec(pair.getPrivate(),KeyInfo.class);assertTrue(info.isUserAuthenticationRequired());assertEquals(300,info.getUserAuthenticationValidityDurationSeconds());}finally{store.reset();shell("locksettings clear --old 2580");}
  }
+ @Test public void activationIsAtomicSingleIdentityAndResetRequiresNewEnrollment()throws Exception {
+  WorkerStore store=new WorkerStore(context);store.reset();store.put("history","previous person's meals");store.put("pairNonce","pending");store.put("pairTime","123");store.activate("first-identity");assertTrue(store.enrolled());assertEquals("first-identity",store.get("certificate"));assertEquals("",store.get("history"));assertEquals("",store.get("pairNonce"));assertEquals("",store.get("pairTime"));
+  try{store.activate("other-identity");fail("Second identity accepted");}catch(IllegalArgumentException expected){}assertEquals("first-identity",new WorkerStore(context).get("certificate"));store.reset();assertFalse(new WorkerStore(context).enrolled());store.activate("authorized-replacement");assertEquals("authorized-replacement",store.get("certificate"));store.reset();
+ }
 }

@@ -48,7 +48,7 @@ def verify(envelope, pinned_key, contract, product, nonce=None):
 
 class LicenseClient:
     def __init__(self, config_file, cache_file):
-        self.config = json.loads(Path(config_file).read_text(encoding='utf-8-sig'))
+        self.config = dict(config_file) if isinstance(config_file, dict) else json.loads(Path(config_file).read_text(encoding='utf-8-sig'))
         c = self.config
         u = urlsplit(c['url'])
         if c['version'] != 1 or u.scheme != 'https' or not u.hostname or u.username or u.password or u.query or u.fragment or u.path not in ('', '/'):
