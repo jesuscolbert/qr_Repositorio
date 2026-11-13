@@ -26,7 +26,8 @@ class Viewer:
         self.folder = Path(os.environ.get('LOCALAPPDATA', str(Path.home()))) / 'Colbert' / 'ComedorReportes'
         self.companies = {c['name']:c for c in config['companies']}
         root.title('Colbert · Reportes del comedor')
-        root.geometry('1180x800'); root.minsize(950, 650); root.configure(bg=BG)
+        width=min(1180,root.winfo_screenwidth()-60);height=min(800,root.winfo_screenheight()-100)
+        root.geometry(f'{width}x{height}+20+20'); root.minsize(900, 600); root.configure(bg=BG)
         style = ttk.Style(root); style.theme_use('clam')
         style.configure('.', font=('Segoe UI', 10))
         style.configure('TFrame', background=BG); style.configure('TLabel', background=BG, foreground=INK)
