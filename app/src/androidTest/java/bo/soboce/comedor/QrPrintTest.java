@@ -54,7 +54,9 @@ public class QrPrintTest {
                             RectF r=layout.qrBox(i);assertTrue(r.bottom+QrPrintDocument.CAPTION<paper.height-QrPrintDocument.MARGIN-QrPrintDocument.FOOTER);
                             int x=Math.round(r.left*scale),y=Math.round(r.top*scale),w=Math.round(r.width()*scale);int[] pixels=new int[w*w];bitmap.getPixels(pixels,0,w,x,y,w,w);
                             QrPrintDocument.Card card=group.cards.get(offset+i);
-                            try{String qr=new com.google.zxing.qrcode.QRCodeReader().decode(new BinaryBitmap(new HybridBinarizer(new RGBLuminanceSource(w,w,pixels))),Collections.singletonMap(DecodeHintType.TRY_HARDER,Boolean.TRUE)).getText();assertEquals(card.qr,qr);assertEquals(card.id,PeerCards.resolve(db,config,qr,fixture.now).getString("id"));}
+                            // The renderer gives an aligned crop with a known quiet zone. Test its actual
+                            // modules directly; a camera locator can mistake dense interior patterns for corners.
+                            try{String qr=new com.google.zxing.qrcode.QRCodeReader().decode(new BinaryBitmap(new HybridBinarizer(new RGBLuminanceSource(w,w,pixels))),Collections.singletonMap(DecodeHintType.PURE_BARCODE,Boolean.TRUE)).getText();assertEquals(card.qr,qr);assertEquals(card.id,PeerCards.resolve(db,config,qr,fixture.now).getString("id"));}
                             catch(ReaderException failure){unreadable.add(file.getName()+" page="+index+" card="+card.id);try(OutputStream debug=new FileOutputStream(new File(folder,file.getName()+"-page-"+index+".png"))){bitmap.compress(Bitmap.CompressFormat.PNG,100,debug);}}
                             expected.put(new JSONObject().put("id",card.id).put("identity",card.identity).put("qr",card.qr));
                         }}finally{bitmap.recycle();}
