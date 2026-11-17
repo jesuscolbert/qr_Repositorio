@@ -15,6 +15,7 @@ import javax.crypto.spec.PBEKeySpec;
 final class StaffAccess {
  final Context context;final PeerConfig config;final Vault global,companyVault;final String profile;
  static volatile String unlocked="";static volatile long backgroundAt;static int activities;
+ private static final Object CACHE_LOCK=new Object();
  private volatile long refreshed;
  StaffAccess(Context c,PeerConfig config)throws Exception {this.context=c.getApplicationContext();this.config=config;global=new Vault(c,Companies.primary(c));companyVault=new Vault(c,Companies.company(c,config));profile=global.get("staffSelected");config.staff=this;}
  static boolean enabled(PeerConfig c){return c.shared&&!c.raw.optString("staffAuthority").isEmpty();}
@@ -58,13 +59,13 @@ final class StaffAccess {
   JSONObject reply=SharedNetwork.http(config.raw.getString("coordinator")+"/staff?request="+PeerConfig.random(),proof,"Bearer "+config.raw.getString("networkKey"));
   PeerConfig.require(reply.optBoolean("ok"),reply.optString("error","No se confirmó el permiso."));saveReply(reply);return reply;
  }
- synchronized void saveReply(JSONObject reply)throws Exception {
+ void saveReply(JSONObject reply)throws Exception {synchronized(CACHE_LOCK){
   if(reply.has("replacement")&&!certificate().isEmpty()){String value=reply.getString("replacement");JSONObject newer=StaffProtocol.grant(value,config),old=StaffProtocol.grant(certificate(),config);PeerConfig.require(newer.getString("id").equals(old.getString("id"))&&newer.getLong("revision")>old.getLong("revision")&&!newer.getString("key").equals(old.getString("key")),"Respuesta de reemplazo inválida.");companyVault.put("staffReplacement:"+profile,value);}
   if(reply.has("directory")){String cert=reply.getString("directory");JSONObject dir=StaffProtocol.open(cert,config);PeerConfig.require(dir.getString("kind").equals("directory")&&dir.getLong("revision")>=0,"Lista de cuentas inválida.");String previous=companyVault.get("staffDirectory");long revision=previous.isEmpty()?0:StaffProtocol.open(previous,config).getLong("revision");
    if(dir.getLong("revision")>=revision){JSONArray users=dir.getJSONArray("accounts");Set<String> ids=new HashSet<>();for(int i=0;i<users.length();i++){JSONObject g=StaffProtocol.grant(users.getString(i),config);PeerConfig.require(ids.add(g.getString("id")),"Cuenta repetida.");}companyVault.put("staffDirectory",cert);for(int i=0;i<users.length();i++){String value=users.getString(i);JSONObject g=StaffProtocol.grant(value,config);if(g.getString("key").equals(publicKey()))saveGrant(value);}}
   }
   if(reply.has("certificate")){String value=reply.getString("certificate");JSONObject g=StaffProtocol.grant(value,config);if(g.getString("key").equals(publicKey()))saveGrant(value);}
- }
+ }}
  private void saveGrant(String value)throws Exception {JSONObject g=StaffProtocol.grant(value,config);String old=certificate();if(!old.isEmpty()&&StaffProtocol.grant(old,config).getLong("revision")>g.getLong("revision"))return;companyVault.put("staffCert:"+profile,value);}
  void refresh(boolean force)throws Exception {long now=SystemClock.elapsedRealtime();if(!force&&now-refreshed<30000)return;remote("status",new JSONObject());refreshed=now;}
  JSONObject directory()throws Exception {String value=companyVault.get("staffDirectory");return value.isEmpty()?null:StaffProtocol.open(value,config);}
