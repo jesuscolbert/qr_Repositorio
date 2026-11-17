@@ -3,6 +3,15 @@ import Foundation
 import CryptoKit
 import ComedorCore
 enum Demo {
+ static func exportValidation(_ state:AppState)throws{
+  guard let c=state.companies["soboce"],let person=c.people["DEMO-001"]else{return}
+  let folder=FileManager.default.urls(for:.documentDirectory,in:.userDomainMask)[0].appendingPathComponent("validation",isDirectory:true)
+  try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
+  let op=c.op(name:state.operatorName,plant:"Planta Norte"),qr=try Ledger.workerCard(c,person:person,op:op,now:Wire.now)
+  guard let png=Output.qr(qr)?.pngData()else{throw ComedorError("No se generó el QR de prueba.")};try png.write(to:folder.appendingPathComponent("credencial.png"))
+  for (paper,name) in [("Carta","carta"),("Oficio (21,6 × 33 cm)","oficio"),("Legal","legal")]{for size in [7.0,8.0]{let pdf=try Output.pdf(company:"Demostración",plant:"Planta Norte",people:Array(repeating:person,count:7),size:size,paper:paper){_ in qr};try pdf.write(to:folder.appendingPathComponent("tarjetas-\(name)-\(Int(size)).pdf"))}}
+  try Data(qr.utf8).write(to:folder.appendingPathComponent("qr-expected.txt"))
+ }
  static func state()throws->AppState{var state=AppState();state.selected="soboce";state.operatorName="Ana · demostración"
   for id in ["soboce","frigor"]{let profile=try Profile(["v":1,"id":.string(id),"url":.string(id=="soboce" ? "https://comedor.colbert2027.shop":"https://frigor.colbert2027.shop"),"cluster":.string(String(repeating:id=="soboce" ? "b":"c",count:64)),"key":.string(String(repeating:"a",count:64)),"license":["version":1,"url":"https://licencias.colbert2027.shop","contractId":.string(id+"-comedor"),"productId":.string(id+"-comedor"),"token":.string(String(repeating:"d",count:64))]])
    var c=CompanyState(profile:profile);let now=Wire.now

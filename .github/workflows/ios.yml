@@ -39,7 +39,9 @@ jobs:
         if: always()
         with:
           name: Colbert-Control-iOS-validacion
-          path: ios/build/validation/
+          path: |
+            ios/build/validation/
+            !ios/build/validation/UITests.xcresult/**
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: success() && hashFiles('ios/project.yml') != ''

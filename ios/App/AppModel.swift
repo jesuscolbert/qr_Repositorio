@@ -16,7 +16,7 @@ import ComedorCore
  var isDemo=false
  init(){
   #if DEBUG
-  if ProcessInfo.processInfo.arguments.contains("--demo"){do{state=try Demo.state();isDemo=true;unlocked=true;plant=company?.plants.first ?? "";return}catch{fatal=error.localizedDescription;return}}
+  if ProcessInfo.processInfo.arguments.contains("--demo"){do{state=try Demo.state();try Demo.exportValidation(state);isDemo=true;unlocked=true;plant=company?.plants.first ?? "";return}catch{fatal=error.localizedDescription;return}}
   #endif
   do{let folder=try FileManager.default.url(for:.applicationSupportDirectory,in:.userDomainMask,appropriateFor:nil,create:true).appendingPathComponent("ComedorControl",isDirectory:true);file=try EncryptedFile(url:folder.appendingPathComponent("control.bin"),key:Self.key());state=try file!.load();plant=company?.plants.first ?? ""}catch{fatal="No se pudo abrir la base protegida. Conserva la app y sus datos. \(error.localizedDescription)"}
  }
