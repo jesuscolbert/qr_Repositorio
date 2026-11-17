@@ -60,10 +60,10 @@ class SharedNetwork {
         if(method.equals("status"))return status();
         PeerConfig.require(r.optInt("protocol")==protocol(),"Actualiza y autoriza todos los teléfonos para compartir cuentas y consumos.");
         if(method.equals("scan")){synchronized(engine.db){
-            JSONObject reply=ledger.scan(r.getJSONObject("request"),config.staff==null?r.getJSONObject("operator"):StaffProtocol.operator(StaffProtocol.grant(r.getJSONObject("request").getJSONObject("staffProof").getString("certificate"),config)),System.currentTimeMillis(),engine.license.allowed());
+            long when=System.currentTimeMillis();JSONObject reply=ledger.scan(r.getJSONObject("request"),config.staff==null?r.getJSONObject("operator"):StaffProtocol.operator(StaffProtocol.grant(r.getJSONObject("request").getJSONObject("staffProof").getString("certificate"),config)),when,engine.license.allowed());
             // Return a bounded, contiguous receipt page with the result. The client
             // persists it before showing green; full history exchange stays separate.
-            if(r.optInt("fastScan")==1)reply.put("scanSync",new JSONObject().put("events",ledger.events(r.getJSONObject("after"),20)).put("rosterEvents",new RosterLedger(engine.db,config).events(r.getJSONObject("rosterAfter"),20)).put("vector",ledger.vector()));
+            if(r.optInt("fastScan")==1)reply.put("scanSync",new JSONObject().put("time",when).put("events",ledger.events(r.getJSONObject("after"),20)).put("rosterEvents",new RosterLedger(engine.db,config).events(r.getJSONObject("rosterAfter"),20)).put("vector",ledger.vector()));
             return reply;
         }}
         PeerConfig.require(method.equals("exchange"),"Método inválido.");
@@ -139,8 +139,10 @@ class SharedNetwork {
             reply.remove("scanSync");
             // A busy server may have more than one page ahead. Do not show a new
             // delivery until its durable receipt is present, even across a restart.
-            if(reply.optString("status").equals("accepted")&&ledger.eventFor(id).isEmpty())exchange();
-            if(reply.optString("status").equals("accepted"))PeerConfig.require(!ledger.eventFor(id).isEmpty(),"Falta confirmar la copia local de la entrega.");
+            boolean receiptRequired=Arrays.asList("accepted","recovered").contains(reply.optString("status"));
+            if(receiptRequired&&ledger.eventFor(id).isEmpty())exchange();
+            if(receiptRequired)PeerConfig.require(!ledger.eventFor(id).isEmpty(),"Falta confirmar la copia local de la entrega.");
+            if(reply.optString("status").equals("duplicate")){long when=copy==null?System.currentTimeMillis():copy.getLong("time");if(!ledger.hasMeal(request,config.operator(-1),when))exchange();PeerConfig.require(ledger.hasMeal(request,config.operator(-1),when),"Falta guardar el registro anterior para impedir una segunda entrega sin conexión.");}
             if(reply.optBoolean("ok")||reply.optBoolean("definitive")){synchronized(engine.db){engine.db.save("shared_results",id,new JSONObject().put("request",request).put("reply",reply));engine.db.putMeta(marker,"");}lastExchange=System.currentTimeMillis();}
             return reply;
         }catch(Exception unknown){return uncertain();}

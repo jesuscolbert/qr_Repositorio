@@ -58,6 +58,7 @@ final class SharedLedger {
         for(String table:new String[]{"offline_events","shared_events"})try(Cursor c=db.getReadableDatabase().rawQuery("SELECT record FROM "+table+" WHERE meal_key=? LIMIT 1",new String[]{key})){if(c.moveToFirst())return new JSONObject(c.getString(0));}
         return null;
     }
+    boolean hasMeal(JSONObject request,JSONObject operator,long when)throws Exception {synchronized(db){return find(new MealLedger(db,config).scanRecord(request,operator,when).getString("clave"))!=null;}}
     JSONObject vector(){synchronized(db){JSONObject v=new JSONObject();try(Cursor c=db.getReadableDatabase().rawQuery("SELECT origin,MAX(seq) FROM shared_events GROUP BY origin",null)){while(c.moveToNext())try{v.put(c.getString(0),c.getLong(1));}catch(JSONException impossible){throw new IllegalStateException(impossible);}}return v;}}
     JSONArray events(JSONObject after,int limit) throws Exception {synchronized(db){
         PeerConfig.require(after.length()<=512&&limit>0&&limit<=20,"Estado de sincronización inválido.");

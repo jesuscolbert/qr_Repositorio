@@ -319,7 +319,8 @@ public class PeerDatabaseTest {
             elect(new PeerEngine[]{leader,client},0,1);JSONObject first=sharedRequest(1,"almuerzo");assertFalse(client.request(first).getBoolean("ok"));assertEquals(1,leader.offline.records().size());assertEquals(0,client.offline.records().size());
             lose[0]=false;assertEquals("recovered",client.request(first).getString("status"));assertEquals(1,leader.offline.records().size());assertEquals(1,client.offline.records().size());
             // More than one page is ahead: a green result still requires the actual receipt.
-            long now=System.currentTimeMillis();for(int i=1;i<=25;i++){String qr=PeerCards.request(leader.db,leader.config,enrollmentRequest("70000"+i,"Prueba "+i).put("plant","Planta 0"),now).getString("qr");leader.request(sharedRequest(0,"cena").put("qr",qr));}
+            long now=System.currentTimeMillis();String lastQr="";for(int i=1;i<=25;i++){String qr=PeerCards.request(leader.db,leader.config,enrollmentRequest("70000"+i,"Prueba "+i).put("plant","Planta 0"),now).getString("qr");lastQr=qr;leader.request(sharedRequest(0,"cena").put("qr",qr));}
+            assertEquals("duplicate",client.request(sharedRequest(1,"cena").put("qr",lastQr)).getString("status"));assertEquals(26,client.offline.records().size());
             JSONObject next=sharedRequest(1,"cena");assertEquals("accepted",client.request(next).getString("status"));assertFalse(client.shared.ledger.eventFor(next.getString("requestId")).isEmpty());assertEquals(27,client.offline.records().size());assertEquals(27,leader.offline.records().size());
         }finally{leader.close();leader.db.close();client.close();client.db.close();context.deleteDatabase(serverFile);context.deleteDatabase(clientFile);}
     }
