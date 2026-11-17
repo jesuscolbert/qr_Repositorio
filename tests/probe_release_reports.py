@@ -58,7 +58,8 @@ def main():
             except (urllib.error.URLError,TimeoutError,ConnectionError):
                 if attempt==19:raise
                 time.sleep(1)
-        assert health['reportsProtocol']==1 and health['controlProtocol']==1 and health['appVersion']=='1.15.0-piloto'
+        expected_version=re.search(r"versionName\s+'([^']+)'",(ROOT/'app/build.gradle').read_text(encoding='utf-8')).group(1)+'-piloto'
+        assert health['reportsProtocol']==1 and health['controlProtocol']==1 and health['appVersion']==expected_version,(health,expected_version)
         def request(signing_key,old=False):
             now=0 if old else int(time.time()*1000);nonce=secrets.token_hex(32)
             payload=json.dumps(dict(action='report',period='day',date='2026-11-12',month='2026-11',plant=''),separators=(',',':'))
