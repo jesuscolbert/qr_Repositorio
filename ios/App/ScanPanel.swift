@@ -4,7 +4,12 @@ import ComedorCore
 
 struct ScanPanel:View {
  @EnvironmentObject var model:AppModel;@Environment(\.scenePhase) var phase
- @State private var result:J?,error="",processing=false,identity:J?,identityQR="",releaseTask:Task<Void,Never>?
+ @State private var result:J?
+ @State private var error=""
+ @State private var processing=false
+ @State private var identity:J?
+ @State private var identityQR=""
+ @State private var releaseTask:Task<Void,Never>?
  var body:some View{VStack(alignment:.leading,spacing:18){MealPicker()
   if model.company?.pending != nil{VStack(alignment:.leading,spacing:12){Label("Entrega sin confirmar",systemImage:"exclamationmark.triangle.fill").font(.title3.bold());Text("Puede haberse registrado en el servidor. No autorices otra ración para esta operación.");Button("Comprobar entrega"){Task{processing=true;defer{processing=false};do{show(try await model.recover())}catch{self.error=error.localizedDescription}}}.buttonStyle(PrimaryButton()).disabled(model.busy)}.card()}
   else if model.company?.permitted != true{Label("Comprueba tu permiso en el menú Licencia.",systemImage:"lock.fill").card()}

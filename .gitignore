@@ -15,3 +15,7 @@ app/src/main/jniLibs/
 app/src/main/assets/cloudflared-LICENSE.txt
 
 **/.wrangler/
+ios/.build/
+ios/.swiftpm/
+ios/*.xcodeproj/
+ios/App/Info.plist

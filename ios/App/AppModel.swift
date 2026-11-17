@@ -5,8 +5,13 @@ import ComedorCore
 
 @MainActor final class AppModel:ObservableObject {
  @Published private(set) var state=AppState()
- @Published var unlocked=false,busy=false,fatal="",message="",plant="",meal="almuerzo"
- private var file:EncryptedFile?;let transport=Transport()
+ @Published var unlocked=false
+ @Published var busy=false
+ @Published var fatal=""
+ @Published var message=""
+ @Published var plant=""
+ @Published var meal="almuerzo"
+ private var file:EncryptedFile?;private var licenseAttempt:[String:Int64]=[:];let transport=Transport()
  var company:CompanyState?{state.companies[state.selected]}
  var isDemo=false
  init(){
@@ -40,7 +45,7 @@ import ComedorCore
  func synchronize()async{
   guard !busy,let original=company,!isDemo else{return};busy=true;defer{busy=false};message="Sincronizando \(original.profile.id.uppercased())…"
   var working=original
-  do{working.license=try await transport.license(working);working.checkpoint();try store(working)}catch{if !working.permitted{message="No se pudo validar el permiso: \(error.localizedDescription)"}}
+  if Wire.now-(licenseAttempt[working.profile.id] ?? 0)>900000 || !working.permitted{licenseAttempt[working.profile.id]=Wire.now;do{working.license=try await transport.license(working);working.checkpoint();try store(working)}catch{if !working.permitted{message="No se pudo validar el permiso: \(error.localizedDescription)"}}}
   do{let p=working.profile;working=try await Synchronizer.run(working){[transport] request in try await transport.control(p,request)};try store(working);if !working.plants.contains(plant){plant=working.plants.first ?? ""};message="Datos actualizados · \(Wire.date(working.lastSync,"HH:mm"))"}catch{message="\(error.localizedDescription) Los datos y entregas pendientes se conservan."}
  }
  func refreshLicense()async{guard !busy,var c=company,!isDemo else{return};busy=true;defer{busy=false};do{c.license=try await transport.license(c);c.checkpoint();try store(c);message=c.permitted ? "Permiso vigente guardado en este iPhone.":"El servidor de permisos no habilitó esta empresa. Contacta con Jesús."}catch{message="\(error.localizedDescription) \(c.permitted ? "Tu permiso vigente se conserva.":"")"}}
