@@ -15,7 +15,7 @@ from configuration import read
 from reports_client import ReportsClient, save_workbook
 from report_snapshots import ReportSession
 
-VERSION = '1.2.0'
+VERSION = '1.3.0'
 BG, INK, MUTED, BLUE = '#f1f5fb', '#102039', '#536580', '#1468d4'
 ALL = 'Todas las plantas'
 

@@ -21,6 +21,19 @@ import java.security.spec.ECGenParameterSpec;
 
 @RunWith(AndroidJUnit4.class)
 public class WorkerTest {
+ @Test public void monthlySummaryCountsMealsAndDaysWithoutInventedPoints()throws Exception{
+  long now=java.time.Instant.parse("2026-11-30T20:00:00Z").toEpochMilli();JSONArray items=new JSONArray();
+  for(String[] row:new String[][]{{"2026-11-01","almuerzo",""},{"2026-11-01","desayuno",""},{"2026-11-29","dieta","Posible duplicado"},{"2026-10-31","cena",""},{"2026-12-01","almuerzo",""}})items.put(new JSONObject().put("date",row[0]).put("time","12:00:00").put("meal",row[1]).put("plant","Prueba").put("review",row[2]));
+  MealSummary summary=new MealSummary(items,now);assertEquals(3,summary.rows.length());assertEquals(2,summary.days.size());assertEquals(Integer.valueOf(1),summary.meals.get("dieta"));assertEquals(Integer.valueOf(0),summary.meals.get("cena"));assertEquals(1,summary.review);assertEquals("2026-11-29",summary.rows.getJSONObject(0).getString("date"));
+  assertEquals(0,new MealSummary(items,java.time.Instant.parse("2026-12-02T20:00:00Z").toEpochMilli()).meals.get("desayuno").intValue());
+ }
+ @Test public void enrollmentCameraIsPortraitAndProtectsItsWindow()throws Exception{
+  android.content.ComponentName name=new android.content.ComponentName(context,bo.colbert.credential.CredentialScanActivity.class);
+  assertEquals(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,context.getPackageManager().getActivityInfo(name,0).screenOrientation);
+  shell("pm grant "+context.getPackageName()+" android.permission.CAMERA");
+  Activity camera=i.startActivitySync(new Intent(context,bo.colbert.credential.CredentialScanActivity.class).setAction("com.google.zxing.client.android.SCAN").putExtra("SCAN_FORMATS","QR_CODE").putExtra("PROMPT_MESSAGE","Escanea la autorización del encargado").putExtra("BEEP_ENABLED",false).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+  try{i.waitForIdleSync();assertTrue((camera.getWindow().getAttributes().flags&WindowManager.LayoutParams.FLAG_SECURE)!=0);assertTrue(text(camera.getWindow().getDecorView(),"Escanea la credencial"));i.runOnMainSync(()->camera.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE));shot("03-escaner-vertical");}finally{i.runOnMainSync(camera::finish);}
+ }
  final Instrumentation i=InstrumentationRegistry.getInstrumentation();final Context context=i.getTargetContext();
  static void field(Object target,String name,Object value)throws Exception {Field f=target.getClass().getDeclaredField(name);f.setAccessible(true);f.set(target,value);}
  static void call(Object target,String name)throws Exception {Method m=target.getClass().getDeclaredMethod(name);m.setAccessible(true);m.invoke(target);}
@@ -32,7 +45,7 @@ public class WorkerTest {
   WorkerStore store=new WorkerStore(context);store.reset();KeyPairGenerator g=KeyPairGenerator.getInstance("EC");g.initialize(new ECGenParameterSpec("secp256r1"));KeyPair key=g.generateKeyPair();long now=System.currentTimeMillis();
   JSONObject claims=new JSONObject().put("v",1).put("c","a".repeat(64)).put("p","CI-00010001").put("k",WalletProtocol.publicText(key.getPublic())).put("r",1).put("tag","b".repeat(64)).put("a","d".repeat(32)).put("i",now).put("e",now+WalletProtocol.LIFETIME).put("name","María · demostración").put("document","CI 00010001").put("plant","Planta de prueba").put("url","https://comedor.colbert2027.shop").put("by","Encargado de prueba");
   String cert=WalletProtocol.CERT+WalletProtocol.b64(claims.toString().getBytes(StandardCharsets.UTF_8))+"."+"0".repeat(64);
-  store.put("certificate",cert);store.put("history",new JSONObject().put("serverTime",now).put("items",new JSONArray().put(new JSONObject().put("date","2026-11-12").put("time","12:05:00").put("meal","almuerzo").put("plant","Planta de prueba").put("review",""))).toString());
+  store.put("certificate",cert);store.put("history",new JSONObject().put("serverTime",now).put("items",new JSONArray().put(new JSONObject().put("date",java.time.LocalDate.now(MealSummary.ZONE).toString()).put("time","12:05:00").put("meal","almuerzo").put("plant","Planta de prueba").put("review",""))).toString());
   MainActivity activity=(MainActivity)i.startActivitySync(new Intent(context,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
   try{i.waitForIdleSync();i.runOnMainSync(()->{try{assertTrue(text(activity.getWindow().getDecorView(),"Desbloquear con el teléfono"));assertTrue((activity.getWindow().getAttributes().flags&WindowManager.LayoutParams.FLAG_SECURE)!=0);field(activity,"identity",key);field(activity,"certificate",cert);field(activity,"unlockedUntil",SystemClock.elapsedRealtime()+120000);field(activity,"lastAutoAttempt",SystemClock.elapsedRealtime());call(activity,"home");activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);}catch(Exception e){throw new AssertionError(e);}});shot("01-mi-qr");readableQr();assertTrue(text(activity.getWindow().getDecorView(),"CI 00010001"));i.runOnMainSync(()->{try{call(activity,"history");}catch(Exception e){throw new AssertionError(e);}});shot("02-mis-consumos");assertTrue(text(activity.getWindow().getDecorView(),"ALMUERZO"));assertTrue(text(activity.getWindow().getDecorView(),"Última actualización"));i.runOnMainSync(()->{try{call(activity,"locked");}catch(Exception e){throw new AssertionError(e);}});assertFalse(text(activity.getWindow().getDecorView(),"CI 00010001"));}finally{i.runOnMainSync(activity::finish);store.reset();}
  }

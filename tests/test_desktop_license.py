@@ -85,4 +85,27 @@ class DesktopLicenseTest(unittest.TestCase):
                     with self.assertRaises(lic.LicenseBlocked) as caught:client.require_access()
                 self.assertNotIsInstance(caught.exception,lic.LicenseUnavailable);self.assertIn(phrase,str(caught.exception));self.assertFalse(client.allowed())
 
+    def test_paid_month_survives_offline_restart_but_stops_at_exact_expiry(self):
+        start=1794844800000;self.claims.update(version=2,grantKind='paid',issuedAt=start,expiresAt=start+30*lic.OFFLINE_MS,paidUntil=start+30*lic.OFFLINE_MS)
+        lic.verify(self.envelope(),self.pub,'client','app','n')
+        with tempfile.TemporaryDirectory() as d:
+            client=self.client(d);state=dict(publicKey=self.pub,envelope=self.envelope(),monotonic=1000,bootEstimate=start/1000-1000,wallAtValidation=start/1000,lastWall=start/1000,lastServer=start)
+            client.cache_path.write_text(json.dumps(state))
+            with patch.object(lic.time,'time',return_value=start/1000+20*86400),patch.object(lic.time,'monotonic',return_value=50),patch.object(client,'refresh',side_effect=urllib.error.URLError('offline')):
+                client.require_access();self.assertTrue(client.allowed())
+                self.assertTrue(self.client(d).allowed())
+            with patch.object(lic.time,'time',return_value=start/1000+30*86400),patch.object(lic.time,'monotonic',return_value=50):self.assertFalse(client.allowed())
+            with patch.object(lic.time,'time',return_value=start/1000+10*86400),patch.object(lic.time,'monotonic',return_value=50):self.assertFalse(client.allowed())
+    def test_full_grant_cannot_exceed_paid_until_or_replace_temporary_cap(self):
+        start=self.claims['issuedAt'];self.claims.update(version=2,grantKind='paid',expiresAt=start+30*lic.OFFLINE_MS,paidUntil=start+30*lic.OFFLINE_MS)
+        self.assertTrue(lic.verify(self.envelope(),self.pub,'client','app','n')['allowed'])
+        self.claims['expiresAt']+=1
+        with self.assertRaises(ValueError):lic.verify(self.envelope(),self.pub,'client','app','n')
+        self.claims.update(grantKind='temporary',paidUntil=0)
+        with self.assertRaises(ValueError):lic.verify(self.envelope(),self.pub,'client','app','n')
+    def test_invalid_network_reply_does_not_discard_already_verified_payment(self):
+        with tempfile.TemporaryDirectory() as d:
+            client=self.client(d);state=dict(publicKey=self.pub,envelope=self.envelope(),monotonic=time.monotonic()-61,bootEstimate=time.time()-time.monotonic());client.cache_path.write_text(json.dumps(state))
+            with patch.object(client,'refresh',side_effect=ValueError('invalid response')):client.require_access()
+
 if __name__=='__main__': unittest.main()

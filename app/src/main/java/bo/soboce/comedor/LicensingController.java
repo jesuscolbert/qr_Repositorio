@@ -8,7 +8,7 @@ import java.util.concurrent.*;
 final class LicensingController {
  final MainActivity activity;final LicenseClient client;private final Handler ui=new Handler(Looper.getMainLooper());private final ExecutorService worker=Executors.newSingleThreadExecutor();private boolean resumed,busy,lastAllowed;private long attempted;
  LicensingController(MainActivity a){activity=a;client=LicenseClient.get(a);lastAllowed=client.allowed();}
- private final Runnable tick=new Runnable(){public void run(){if(!resumed)return;boolean now=client.allowed();if(now!=lastAllowed){lastAllowed=now;activity.licenseChanged();}if(client.configured()&&!busy&&client.refreshDue()&&SystemClock.elapsedRealtime()-attempted>15000){busy=true;attempted=SystemClock.elapsedRealtime();worker.execute(()->{try{client.refresh();}catch(Exception ignored){}ui.post(()->{busy=false;if(resumed){boolean allowed=client.allowed();if(allowed!=lastAllowed){lastAllowed=allowed;activity.licenseChanged();}}});});}ui.postDelayed(this,1000);}};
+ private final Runnable tick=new Runnable(){public void run(){if(!resumed)return;boolean now=client.allowed();activity.updateLicenseNotice();if(now!=lastAllowed){lastAllowed=now;activity.licenseChanged();}if(client.configured()&&!busy&&client.refreshDue()&&SystemClock.elapsedRealtime()-attempted>15000){busy=true;attempted=SystemClock.elapsedRealtime();worker.execute(()->{try{client.refresh();}catch(Exception ignored){}ui.post(()->{busy=false;if(resumed){boolean allowed=client.allowed();if(allowed!=lastAllowed){lastAllowed=allowed;activity.licenseChanged();}}});});}ui.postDelayed(this,1000);}};
  void resume(){resumed=true;ui.removeCallbacks(tick);ui.post(tick);}
  void pause(){resumed=false;ui.removeCallbacks(tick);}
  void close(){pause();worker.shutdown();}

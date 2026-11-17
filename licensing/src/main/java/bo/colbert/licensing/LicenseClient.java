@@ -43,21 +43,30 @@ public final class LicenseClient {
   try{
    JSONObject cache=new JSONObject(vault.get("permit"));String key=vault.get("serverKey");
    JSONObject claims=LicenseProtocol.verify(cache.getJSONObject("envelope"),key,config.getString("contractId"),config.getString("productId"),null);
-   // After a reboot we demand a fresh validation: wall-clock changes cannot extend a lease.
-   if(boot()<0||cache.getInt("boot")!=boot())return false;
-   return LicenseProtocol.usable(claims,SystemClock.elapsedRealtime()-cache.getLong("elapsed"));
+   long now=trustedTime(claims,cache);
+   return now>0&&LicenseProtocol.usable(claims,now-claims.getLong("issuedAt"));
   }catch(Exception e){return false;}
  }
+ private long trustedTime(JSONObject claims,JSONObject cache)throws Exception {
+  String saved=vault.get("licenseClock"),permitHash=LicenseProtocol.hash(cache.getJSONObject("envelope").getString("claims"));JSONObject checkpoint=saved.isEmpty()?new JSONObject():new JSONObject(saved);if(!checkpoint.optString("permitHash").equals(permitHash))checkpoint=new JSONObject();
+  long wall=System.currentTimeMillis(),elapsed=SystemClock.elapsedRealtime();int currentBoot=boot();
+  long now=LicenseClock.now(claims,cache,checkpoint,wall,elapsed,currentBoot);
+  if(now>0&&(now-checkpoint.optLong("serverTime")>=60000||checkpoint.optInt("boot",-2)!=currentBoot)){
+   vault.put("licenseClock",new JSONObject().put("permitHash",permitHash).put("serverTime",now).put("wall",wall).put("boot",currentBoot).toString());
+  }
+  return now;
+ }
+ public synchronized String renewalNotice(){try{if(!allowed())return "";JSONObject cache=new JSONObject(vault.get("permit")),claims=details();return LicenseClock.renewalNotice(claims,trustedTime(claims,cache));}catch(Exception e){return "";}}
  public synchronized JSONObject details(){try{String s=vault.get("permit");return s.isEmpty()?new JSONObject():new JSONObject(new JSONObject(s).getJSONObject("envelope").getString("claims"));}catch(Exception e){return new JSONObject();}}
  public synchronized boolean refreshDue(){try{JSONObject p=new JSONObject(vault.get("permit"));return !allowed()||SystemClock.elapsedRealtime()-p.getLong("elapsed")>60000;}catch(Exception e){return true;}}
  public JSONObject refresh()throws Exception {
-  if(config==null)throw new IOException("Falta configurar la licencia.");String nonce=LicenseProtocol.random();long sent=SystemClock.elapsedRealtime();
-  JSONObject reply=post("/v1/status",new JSONObject().put("nonce",nonce));
+  if(config==null)throw new IOException("Falta configurar la licencia.");String nonce=LicenseProtocol.random();long sent=SystemClock.elapsedRealtime(),wall=System.currentTimeMillis();int sentBoot=boot();
+  JSONObject reply=post("/v1/status",new JSONObject().put("nonce",nonce).put("permitVersion",2));
   synchronized(this){
    String pinned=vault.get("serverKey");if(pinned.isEmpty())pinned=reply.getString("publicKey"); // First contact authenticated by HTTPS and the contract credential.
    JSONObject claims=LicenseProtocol.verify(reply,pinned,config.getString("contractId"),config.getString("productId"),nonce);
    JSONObject previous=details();if(previous.has("revision")&&(claims.getLong("revision")<previous.getLong("revision")||claims.getLong("issuedAt")<previous.getLong("issuedAt")))return previous;
-   vault.put("serverKey",pinned);vault.put("permit",new JSONObject().put("envelope",reply).put("elapsed",sent).put("boot",boot()).toString());
+   vault.put("serverKey",pinned);vault.put("licenseClock","");vault.put("permit",new JSONObject().put("envelope",reply).put("elapsed",sent).put("wall",wall).put("boot",sentBoot).toString());
    return claims;
   }
  }
@@ -74,5 +83,5 @@ public final class LicenseClient {
   byte[] bytes=request.toString().getBytes(StandardCharsets.UTF_8);c.setFixedLengthStreamingMode(bytes.length);
   try{try(OutputStream out=c.getOutputStream()){out.write(bytes);}if(c.getResponseCode()!=200){String problem="Servidor de permisos no disponible (HTTP "+c.getResponseCode()+").";if(c.getResponseCode()==400||c.getResponseCode()==403||c.getResponseCode()==429)try(InputStream error=c.getErrorStream()){if(error!=null){String detail=new JSONObject(new String(read(error,4096),StandardCharsets.UTF_8)).optString("error");if(!detail.isEmpty()&&detail.length()<=500)problem=detail;}}catch(Exception ignored){}throw new IOException(problem);}try(InputStream in=c.getInputStream()){return new JSONObject(new String(read(in,4*1024*1024),StandardCharsets.UTF_8));}}finally{c.disconnect();}
  }
- public boolean showIfBlocked(android.app.Activity a){if(allowed())return false;a.startActivity(new Intent(a,LicenseActivity.class));return true;}
+ public boolean showIfBlocked(android.app.Activity a){if(allowed())return false;a.startActivity(new Intent(a,LicenseActivity.class).putExtra("automatic",true));return true;}
 }

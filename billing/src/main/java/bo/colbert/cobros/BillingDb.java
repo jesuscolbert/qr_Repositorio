@@ -43,7 +43,7 @@ public final class BillingDb extends SQLiteOpenHelper {
  private void cancelOpen(String id,long now)throws Exception{JSONArray rows=list("invoice");for(int i=0;i<rows.length();i++){JSONObject inv=rows.getJSONObject(i);if(inv.getString("contractId").equals(id)&&inv.getString("state").equals("open")){inv.put("state","cancelled");put("invoice",inv.getString("id"),inv);audit("invoice_cancelled",inv.getString("id"),now);}}}
  public void charge(String id,long now)throws Exception{tx(()->{JSONObject c=contract(id);LicenseProtocol.require(c.getLong("amountMinor")>0,"Define primero un precio mayor a cero.");LicenseProtocol.require(!c.getString("note").trim().isEmpty()||!c.getString("paymentQr").isEmpty(),"Agrega instrucciones o un QR para recibir el pago.");
   // Repeating Cobrar on an unpaid contract keeps the same invoice and pending receipts.
-  if(!c.getString("mode").equals("billing")||c.getLong("paidUntil")>now){cancelOpen(id,now);c.put("mode","billing").put("paidUntil",now);saveContract(c);}
+  if(!c.getString("mode").equals("billing")){c.put("mode","billing").put("paidUntil",Math.max(c.getLong("paidUntil"),now));saveContract(c);}
   invoice(c,now);audit("charge",id,now);return null;
  });}
  public void free(String id,long now)throws Exception{tx(()->{JSONObject c=contract(id);cancelOpen(id,now);c.put("mode","free").put("paidUntil",0);saveContract(c);audit("free",id,now);return null;});}
@@ -54,10 +54,14 @@ public final class BillingDb extends SQLiteOpenHelper {
   LicenseProtocol.require(c.getLong("amountMinor")>0,"Falta un precio válido para renovar.");String id=UUID.randomUUID().toString();
   JSONObject inv=new JSONObject().put("id",id).put("contractId",c.getString("id")).put("created",now).put("amountMinor",c.getLong("amountMinor")).put("currency",c.getString("currency")).put("interval",c.getString("interval")).put("note",c.getString("note")).put("paymentQr",c.getString("paymentQr")).put("state","open");put("invoice",id,inv);audit("invoice",id,now);return inv;
  }
- public JSONObject status(String contractId,String nonce,long now)throws Exception{return tx(()->{
+ public JSONObject status(String contractId,String nonce,long now)throws Exception{return status(contractId,nonce,now,1);}
+ public JSONObject status(String contractId,String nonce,long now,int permitVersion)throws Exception{return tx(()->{
+  LicenseProtocol.require(permitVersion==1||permitVersion==2,"Versión de permiso incompatible.");
   LicenseProtocol.require(nonce.matches("[a-f0-9]{64}"),"Consulta inválida.");JSONObject c=contract(contractId);String mode=c.getString("mode");long paid=c.getLong("paidUntil");boolean allowed=mode.equals("free")||(mode.equals("billing")&&now<paid);
   JSONObject claim=new JSONObject().put("version",1).put("contractId",contractId).put("productId",c.getString("productId")).put("customer",c.getString("customer")).put("productName",c.getString("productName")).put("nonce",nonce).put("issuedAt",now).put("paidUntil",mode.equals("free")?0:paid).put("expiresAt",allowed?(mode.equals("free")?now+LicenseProtocol.OFFLINE_MS:Math.min(now+LicenseProtocol.OFFLINE_MS,paid)):now).put("allowed",allowed).put("revision",c.getLong("revision")).put("reason",allowed?"active":mode.equals("suspended")?"suspended":"payment_due");
-  if(mode.equals("billing")&&!allowed){JSONObject inv=invoice(c,now);claim.put("invoice",inv);JSONArray receipts=list("receipt");JSONArray own=new JSONArray();for(int i=0;i<receipts.length();i++){JSONObject r=receipts.getJSONObject(i);if(r.getString("invoiceId").equals(inv.getString("id")))own.put(new JSONObject().put("id",r.getString("id")).put("state",r.getString("state")).put("note",r.optString("reviewNote")).put("created",r.getLong("created")));}claim.put("receipts",own);}
+  if(permitVersion==2)claim.put("version",2).put("grantKind",allowed?(mode.equals("billing")?"paid":"temporary"):"denied").put("expiresAt",allowed&&mode.equals("billing")?paid:claim.getLong("expiresAt"));
+  JSONObject open=null;JSONArray invoices=list("invoice");for(int i=0;i<invoices.length();i++){JSONObject item=invoices.getJSONObject(i);if(item.getString("contractId").equals(contractId)&&item.getString("state").equals("open")){open=item;break;}}
+  if(mode.equals("billing")&&(!allowed||(permitVersion==2&&(open!=null||paid-now<=2*LicenseProtocol.OFFLINE_MS)))){JSONObject inv=invoice(c,now);long start=Math.max(now,paid);claim.put("invoice",new JSONObject(inv.toString()).put("periodStart",start).put("periodEnd",extend(start,inv.getString("interval"))));JSONArray receipts=list("receipt");JSONArray own=new JSONArray();for(int i=0;i<receipts.length();i++){JSONObject r=receipts.getJSONObject(i);if(r.getString("invoiceId").equals(inv.getString("id")))own.put(new JSONObject().put("id",r.getString("id")).put("state",r.getString("state")).put("note",r.optString("reviewNote")).put("created",r.getLong("created")));}claim.put("receipts",own);}
   return claim;
  });}
  public static byte[] image(String text)throws Exception{

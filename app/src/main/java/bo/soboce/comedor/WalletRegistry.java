@@ -46,8 +46,8 @@ final class WalletRegistry {
  JSONObject history(JSONObject request,long now)throws Exception {
   JSONObject b=WalletProtocol.verifyHistory(request,now);authenticated(request.getString("cert"));JSONObject p=person(b.getString("p"));JSONObject current=lookup(p.getString("id"));
   PeerConfig.require(current!=null&&current.getLong("version")==b.getLong("r")&&current.optBoolean("active")&&current.getString("keyHash").equals(WalletProtocol.hash(b.getString("k"))),"Celular revocado o reemplazado.");
-  String first=LocalDate.parse(MealLedger.day(now)).minusDays(29).toString(),last=MealLedger.day(now);JSONArray rows=new JSONArray();List<JSONObject> all=new OfflineLedger(db,config).records();
-  for(int i=all.size()-1;i>=0&&rows.length()<240;i--){JSONObject r=all.get(i);if(r.optString("persona").equals(p.getString("id"))&&r.optString("fecha").compareTo(first)>=0&&r.optString("fecha").compareTo(last)<=0)rows.put(new JSONObject().put("date",r.getString("fecha")).put("time",r.getString("hora")).put("meal",r.getString("comida")).put("plant",r.getString("planta")).put("review",r.optString("revision")));}
-  return new JSONObject().put("ok",true).put("serverTime",now).put("items",rows).put("certificate",issue(p,b.getString("k"),b.getString("a"),current,now));
+  LocalDate today=LocalDate.parse(MealLedger.day(now));String first=(today.minusDays(29).isBefore(today.withDayOfMonth(1))?today.minusDays(29):today.withDayOfMonth(1)).toString(),last=today.toString();JSONArray rows=new JSONArray();List<JSONObject> all=new OfflineLedger(db,config).records();boolean truncated=false;
+  for(int i=all.size()-1;i>=0;i--){JSONObject r=all.get(i);if(r.optString("persona").equals(p.getString("id"))&&r.optString("fecha").compareTo(first)>=0&&r.optString("fecha").compareTo(last)<=0){if(rows.length()>=240){truncated=true;continue;}rows.put(new JSONObject().put("date",r.getString("fecha")).put("time",r.getString("hora")).put("meal",r.getString("comida")).put("plant",r.getString("planta")).put("review",r.optString("revision")));}}
+  return new JSONObject().put("ok",true).put("serverTime",now).put("from",first).put("through",last).put("truncated",truncated).put("items",rows).put("certificate",issue(p,b.getString("k"),b.getString("a"),current,now));
  }
 }

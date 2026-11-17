@@ -6,7 +6,7 @@ FRIGOR 1.8 usa un contrato independiente. Colbert Cobros 1.1 incorpora ese contr
 
 ## Dos empresas en el mismo cliente — 1.9.0
 
-SOBOCE y FRIGOR tienen almacenes de permisos y credenciales separados dentro de la app. Seleccionar otra empresa cambia el contrato consultado; nunca copia la clave fijada, el permiso ni un comprobante de la empresa anterior. El servidor mantiene los contratos existentes. Para cobrar por mes: abrir la empresa, **Editar precio, frecuencia y QR de pago**, escribir el monto, seleccionar **Mensual**, guardar y usar **Solicitar pago y bloquear uso**. Un precio editado no altera cobros ya emitidos.
+SOBOCE y FRIGOR tienen almacenes de permisos y credenciales separados dentro de la app. Seleccionar otra empresa cambia el contrato consultado; nunca copia la clave fijada, el permiso ni un comprobante de la empresa anterior. El servidor mantiene los contratos existentes. Para cobrar por mes: abrir la empresa, **Editar precio, frecuencia y QR de pago**, escribir el monto, seleccionar **Mensual**, guardar y usar **Solicitar pago / Preparar renovación anticipada**. Un precio editado no altera cobros ya emitidos.
 
 ## Cambio de dominio — 1.1.1
 
@@ -27,11 +27,11 @@ El contrato inicial de SOBOCE está **sin cobro activado**. El administrador con
 ## Cobrar y aprobar
 
 1. Abrir un cliente, guardar precio/frecuencia/instrucciones/QR.
-2. `Solicitar pago y bloquear uso` crea un cobro pendiente. Su importe y frecuencia quedan congelados. Un clic repetido conserva el mismo cobro.
+2. `Solicitar pago / Preparar renovación anticipada` crea un cobro pendiente sin recortar un período pagado vigente. Su importe y frecuencia quedan congelados. Un clic repetido conserva el mismo cobro.
 3. El cliente ve el cobro, paga por el medio indicado y adjunta una imagen del comprobante. Se conserva un identificador de envío para reintentar sin duplicarlo.
 4. La solicitud entra en la base del administrador y genera una notificación, si Android lo permite. **Un comprobante no prueba el pago ni concede acceso automáticamente.** El administrador debe verificar el movimiento bancario.
 5. Aprobar habilita todos los equipos de ese cliente para esa aplicación. La aprobación transaccional e idempotente no agrega otro período por doble clic. Rechazar conserva el bloqueo y permite adjuntar otro comprobante.
-6. Al finalizar el período pagado se genera el siguiente cobro al consultar el servidor. Un día son 24 horas; un mes avanza al mismo día del mes siguiente (ajustado al último día válido). Fechas de administración en America/La_Paz.
+6. En clientes nuevos el siguiente cobro se ofrece desde dos días antes del vencimiento al consultar el servidor, manteniendo el acceso vigente. Un día son 24 horas; un mes avanza al mismo día del mes siguiente (ajustado al último día válido). Fechas de administración en America/La_Paz.
 
 Cambiar la tarifa afecta los cobros siguientes. `Reemplazar cobro con nueva tarifa / QR` cancela y sustituye el cobro aún impago; exige resolver antes sus comprobantes pendientes. `Habilitar sin cobro` cancela el cobro abierto. `Suspender acceso manualmente` suspende el contrato; para cobrarlo nuevamente usar Solicitar pago. No hay débitos automáticos ni acumulación automática de períodos durante una suspensión.
 
@@ -39,7 +39,11 @@ Cambiar la tarifa afecta los cobros siguientes. `Reemplazar cobro con nueva tari
 
 La URL de permisos usa un túnel propio, sin rotación de servidores entre clientes. **Solo un teléfono administrador debe ejecutar este túnel.** No instalar su APK en los equipos de clientes ni encender una copia durante una migración.
 
-El permiso firmado dura como máximo 24 horas desde el inicio de su consulta y nunca supera el fin del período pagado. Las apps conectadas consultan aproximadamente cada minuto; la pantalla de pago consulta cada 15 segundos. La suspensión no es instantánea en un teléfono desconectado: su permiso anterior puede durar hasta ese límite. No se usa el reloj editable del cliente para prolongar el permiso: Android usa tiempo monotónico y pide una validación nueva tras reiniciar el teléfono. El cliente Python también exige revalidar tras reinicio o cambios importantes de reloj.
+Los clientes nuevos solicitan `permitVersion: 2`. Un permiso pagado se firma con `expiresAt == paidUntil` y funciona hasta esa fecha sin conexión, incluso después de un reinicio normal. Las habilitaciones sin cobro siguen siendo temporales de 24 horas y requieren revalidación después del reinicio. Las apps antiguas reciben el permiso v1 de 24 horas para mantener compatibilidad.
+
+El reloj se ancla a la hora firmada del servidor y al tiempo monotónico. Tras reiniciar se usa el reloj local con un punto de control persistido; retrocesos importantes requieren validación online. Esto reduce retrocesos accidentales o manipulaciones simples, pero no constituye un reloj seguro ni un DRM contra un equipo comprometido. Una suspensión manual se aplica al consultar al servidor: un equipo desconectado puede utilizar el permiso pagado que ya tiene hasta su vencimiento.
+
+El aviso discreto aparece durante las últimas 48 horas. Se puede emitir y aprobar una renovación anticipada sin recortar el período actual: el nuevo período empieza en `max(aprobación, paidUntil)`. Aprobar el mismo comprobante otra vez no agrega días. `Solicitar pago` sobre un contrato pagado prepara la siguiente factura sin bloquearlo. Actualizar primero Colbert Cobros 1.2.0, después los clientes y comprobar acceso una vez en cada equipo con el servidor encendido para recibir el permiso v2.
 
 Si el teléfono administrador está apagado, pierde internet o Android detiene su servicio, no recibe comprobantes ni comunica nuevas aprobaciones. Los equipos conservan únicamente el permiso ya validado. No se promete disponibilidad permanente de un servidor Android. El servicio muestra una notificación visible; abrir la app y encenderlo permite reanudarlo. La PC no participa en la operación.
 

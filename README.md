@@ -1,5 +1,13 @@
 # SOBOCE Comedor
 
+## Permiso pagado y credencial personal — encargados 1.13.0 / Cobros 1.2.0 / Mi Comedor 1.2.0
+
+El permiso firmado nuevo dura hasta la fecha pagada, incluso sin servidor de Cobros y después de reinicios normales. El aviso discreto de renovación aparece durante los últimos dos días. Emitir otro cobro no recorta días ya pagados; aprobar una renovación continúa desde el vencimiento actual. Se conservan contratos, claves, pagos y datos. Actualizar primero Cobros, luego cada cliente y validar una vez con el servidor encendido. Las apps antiguas reciben el formato anterior de 24 horas. Las habilitaciones sin cobro conservan ese límite temporal. La suspensión manual llega cuando el cliente vuelve a validar; un dispositivo offline conserva su permiso pagado hasta la fecha firmada. Ver `licensing/README.md`.
+
+Mi Comedor presenta una tarjeta personal, QR cambiante con cuenta regresiva y resumen del mes con cantidades por comida, días con consumos y entregas por revisar. Los indicadores reflejan únicamente el historial descargado, con su fecha de actualización; no son puntos ni una valoración nutricional. No se confunde una descarga pendiente con cero consumos. El historial solicitado cubre al menos 30 días y el mes actual completo; un límite de 240 registros se señala como historial parcial.
+
+El escáner de vinculación es vertical en ambas apps, con lectura automática y salida sin vincular. Se mantiene la verificación presencial, la clave del teléfono, un solo trabajador por instalación y la ventana protegida. Una rotación o recreación no amplía el desbloqueo. Un historial local dañado no oculta el QR válido. Las pruebas Android y los instaladores se generan en GitHub.
+
 ## Credencial opcional del obrero (encargados 1.11.0 / Mi Comedor 1.0.0)
 
 `worker/` genera la APK independiente **Mi Comedor**, paquete `bo.colbert.obrero`. Solo muestra el QR propio y los consumos recibidos de los últimos 30 días. No incorpora padrón, precios, claves del encargado, licencias administrativas, servidor ni túnel. Los QR impresos y la impresión por plantas siguen disponibles. El encargado conserva el control de acceso mediante Colbert Cobros.

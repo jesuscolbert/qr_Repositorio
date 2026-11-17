@@ -23,14 +23,16 @@ public final class LicenseProtocol {
   Signature verify=Signature.getInstance("SHA256withECDSA");verify.initVerify(key);verify.update(envelope.getString("claims").getBytes(StandardCharsets.UTF_8));
   require(verify.verify(Base64.getDecoder().decode(envelope.getString("signature"))),"Permiso sin firma válida.");
   JSONObject c=new JSONObject(envelope.getString("claims"));
-  require(c.getInt("version")==1&&c.getString("contractId").equals(contract)&&c.getString("productId").equals(product),"Permiso de otro cliente o aplicación.");
+  require((c.getInt("version")==1||c.getInt("version")==2)&&c.getString("contractId").equals(contract)&&c.getString("productId").equals(product),"Permiso de otro cliente o aplicación.");
   if(nonce!=null)require(c.getString("nonce").equals(nonce),"Respuesta de otra consulta.");
   long issued=c.getLong("issuedAt"),expires=c.getLong("expiresAt"),paid=c.getLong("paidUntil");
-  require(issued>0&&expires>=issued&&expires-issued<=OFFLINE_MS,"Vigencia inválida.");
+  require(issued>0&&expires>=issued&&(paidPermit(c)||expires-issued<=OFFLINE_MS),"Vigencia inválida.");
+  if(c.getInt("version")==2){String kind=c.getString("grantKind");require(kind.equals("paid")||kind.equals("temporary")||kind.equals("denied"),"Tipo de permiso inválido.");require(c.getBoolean("allowed")?!kind.equals("denied"):kind.equals("denied"),"Estado de permiso inválido.");if(kind.equals("paid"))require(paid>issued&&expires==paid,"El permiso pagado debe terminar en su vencimiento.");if(kind.equals("temporary"))require(paid==0,"Permiso temporal inválido.");}
   if(c.getBoolean("allowed"))require(expires>issued&&(paid==0||expires<=paid),"El permiso supera el período pagado.");
   return c;
  }
  public static boolean usable(JSONObject claims,long elapsedSinceValidation){
-  return claims.optBoolean("allowed")&&elapsedSinceValidation>=0&&elapsedSinceValidation<OFFLINE_MS&&elapsedSinceValidation<claims.optLong("expiresAt")-claims.optLong("issuedAt");
+  return claims.optBoolean("allowed")&&elapsedSinceValidation>=0&&(paidPermit(claims)||elapsedSinceValidation<OFFLINE_MS)&&elapsedSinceValidation<claims.optLong("expiresAt")-claims.optLong("issuedAt");
  }
+ public static boolean paidPermit(JSONObject c){return c.optInt("version")==2&&c.optBoolean("allowed")&&c.optString("grantKind").equals("paid")&&c.optLong("paidUntil")>c.optLong("issuedAt")&&c.optLong("expiresAt")==c.optLong("paidUntil");}
 }

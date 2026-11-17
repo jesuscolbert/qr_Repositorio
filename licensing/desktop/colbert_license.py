@@ -40,16 +40,40 @@ def verify(envelope, pinned_key, contract, product, nonce=None):
     key.verify(base64.b64decode(envelope['signature'], validate=True),
                envelope['claims'].encode('utf-8'), ec.ECDSA(hashes.SHA256()))
     c = json.loads(envelope['claims'])
-    if c['version'] != 1 or c['contractId'] != contract or c['productId'] != product:
+    if c['version'] not in (1, 2) or c['contractId'] != contract or c['productId'] != product:
         raise ValueError('Permiso de otro cliente o aplicación.')
     if nonce is not None and c['nonce'] != nonce:
         raise ValueError('Respuesta de otra consulta.')
     issued, expires, paid = c['issuedAt'], c['expiresAt'], c['paidUntil']
-    if not 0 <= expires - issued <= OFFLINE_MS or issued <= 0:
+    if issued <= 0 or expires < issued or (not paid_permit(c) and expires-issued > OFFLINE_MS):
         raise ValueError('Vigencia inválida.')
+    if c['version'] == 2:
+        kind = c.get('grantKind')
+        if kind not in ('paid','temporary','denied') or bool(c['allowed']) != (kind != 'denied'):
+            raise ValueError('Tipo de permiso inválido.')
+        if kind == 'paid' and not (paid > issued and expires == paid):
+            raise ValueError('El permiso debe terminar en el vencimiento pagado.')
+        if kind == 'temporary' and paid != 0:
+            raise ValueError('Permiso temporal inválido.')
     if c['allowed'] and (expires <= issued or paid and expires > paid):
         raise ValueError('El permiso supera el período pagado.')
     return c
+
+def paid_permit(claims):
+    return (claims.get('version') == 2 and claims.get('allowed') is True and claims.get('grantKind') == 'paid'
+            and claims.get('paidUntil',0) > claims.get('issuedAt',0) and claims.get('expiresAt') == claims.get('paidUntil'))
+
+def trusted_now(claims, state, wall, monotonic):
+    elapsed = (monotonic-state['monotonic'])*1000
+    same_boot = abs(wall-monotonic-state['bootEstimate']) < 120
+    if same_boot and elapsed >= 0:
+        candidate = claims['issuedAt']+elapsed
+    else:
+        saved = state.get('wallAtValidation',0)
+        if not paid_permit(claims) or saved <= 0 or wall < saved-120 or wall < state.get('lastWall',saved)-120:
+            return -1
+        candidate = claims['issuedAt']+max(0,wall-saved)*1000
+    return max(candidate,state.get('lastServer',claims['issuedAt']))
 
 class LicenseClient:
     def __init__(self, config_file, cache_file):
@@ -84,31 +108,40 @@ class LicenseClient:
         nonce = secrets.token_hex(32)
         sent = time.monotonic()
         previous = self._load()
-        envelope = self._post('/v1/status', {'nonce': nonce})
+        wall = time.time()
+        envelope = self._post('/v1/status', {'nonce': nonce, 'permitVersion': 2})
         pinned = previous.get('publicKey') or envelope['publicKey']
         claims = verify(envelope, pinned, self.config['contractId'], self.config['productId'], nonce)
+        previous = self._load()
         if previous:
             old = self._claims(previous)
             if claims['revision'] < old['revision'] or claims['issuedAt'] < old['issuedAt']:
                 return old
         state = {'publicKey': pinned, 'envelope': envelope, 'monotonic': sent,
-                 'bootEstimate': time.time() - time.monotonic()}
-        self.cache_path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self.cache_path.with_suffix('.tmp')
-        fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, 'w', encoding='utf-8') as out:
-            json.dump(state, out)
-        os.replace(temporary, self.cache_path)
+                 'bootEstimate': wall-sent, 'wallAtValidation':wall, 'lastWall':wall, 'lastServer':claims['issuedAt']}
+        self._save(state)
         return claims
+
+    def _save(self, state):
+        self.cache_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self.cache_path.with_suffix('.'+secrets.token_hex(8)+'.tmp')
+        try:
+            fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, 'w', encoding='utf-8') as out:
+                json.dump(state, out)
+            os.replace(temporary, self.cache_path)
+        finally:
+            temporary.unlink(missing_ok=True)
 
     def allowed(self):
         try:
             state = self._load()
             c = self._claims(state)
-            elapsed = (time.monotonic() - state['monotonic']) * 1000
-            # Reboot or significant wall-clock change requires revalidation.
-            same_boot = abs(time.time() - time.monotonic() - state['bootEstimate']) < 120
-            return bool(c['allowed'] and same_boot and 0 <= elapsed < min(OFFLINE_MS, c['expiresAt'] - c['issuedAt']))
+            wall = time.time()
+            now = trusted_now(c,state,wall,time.monotonic())
+            if now > 0 and now-state.get('lastServer',c['issuedAt']) >= 60000 and paid_permit(c):
+                state.update(lastServer=now,lastWall=wall);self._save(state)
+            return bool(c['allowed'] and c['issuedAt'] <= now < c['expiresAt'])
         except (KeyError, ValueError, OSError, TypeError, InvalidSignature):
             return False
 
@@ -126,7 +159,7 @@ class LicenseClient:
         except OSError:
             problem = 'No se pudo leer o guardar la validación en esta computadora. Comprueba el acceso a su carpeta de datos; el pago no se ha modificado.'
         except (KeyError, ValueError, TypeError, InvalidSignature):
-            raise LicenseUnavailable('No se pudo verificar la respuesta de Colbert Cobros. Revisa la configuración del visor; no se ha confirmado un problema de pago.') from None
+            problem = 'No se pudo verificar la respuesta de Colbert Cobros. Revisa la configuración del visor; no se ha confirmado un problema de pago.'
         # A network outage cannot extend a permit, discard a signed denial, or invent an approval.
         if self.allowed():
             return

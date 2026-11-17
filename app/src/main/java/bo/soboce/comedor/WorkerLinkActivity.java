@@ -27,7 +27,7 @@ public final class WorkerLinkActivity extends Activity {
   label("Comprueba el carnet original y que la persona presente sea su titular. Esta operación conserva el trabajador y sus consumos.",15);
   status=label("Consulta la vinculación con internet antes de activar o reemplazar un celular.",14);
   button("Consultar celular vinculado",this::lookup);
-  button("Escanear Activar mi credencial",()->{if(!allowed())return;new IntentIntegrator(this).setDesiredBarcodeFormats(IntentIntegrator.QR_CODE).setPrompt("Escanea el QR de activación de la app del obrero").setBeepEnabled(false).setOrientationLocked(true).initiateScan();});
+  button("Escanear Activar mi credencial",()->{if(!allowed())return;new IntentIntegrator(this).setCaptureActivity(bo.colbert.credential.CredentialScanActivity.class).setDesiredBarcodeFormats(IntentIntegrator.QR_CODE).setPrompt("Escanea el QR de activación de la app del obrero").setBeepEnabled(false).setOrientationLocked(true).initiateScan();});
   button("Revocar celular",this::revoke);
   label("Al reemplazar o revocar, los otros encargados conocerán el cambio al sincronizar. La tarjeta física sigue siendo una alternativa. La app del obrero no recibe la base de datos ni permisos del encargado.",14);
   button("Volver",this::finish);
