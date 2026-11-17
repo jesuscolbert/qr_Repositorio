@@ -10,8 +10,15 @@ jobs:
   ios:
     runs-on: macos-15
     timeout-minutes: 35
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
+      - name: Verificar SDK requerido por Apple
+        run: |
+          xcodebuild -version
+          SDK=$(xcrun --sdk iphoneos --show-sdk-version)
+          test "${SDK%%.*}" -ge 26
       - name: Probar licencias, QR y registro sin conexión
         run: swift test --package-path ios
         env:
