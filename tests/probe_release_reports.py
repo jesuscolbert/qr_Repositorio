@@ -58,7 +58,7 @@ def main():
             except (urllib.error.URLError,TimeoutError,ConnectionError):
                 if attempt==19:raise
                 time.sleep(1)
-        assert health['reportsProtocol']==1 and health['appVersion']=='1.14.0-piloto'
+        assert health['reportsProtocol']==1 and health['controlProtocol']==1 and health['appVersion']=='1.14.0-piloto'
         def request(signing_key,old=False):
             now=0 if old else int(time.time()*1000);nonce=secrets.token_hex(32)
             payload=json.dumps(dict(action='report',period='day',date='2026-11-12',month='2026-11',plant=''),separators=(',',':'))
@@ -73,8 +73,15 @@ def main():
         assert json.loads(reply['payload'])==dict(ok=False,error='license'),'No test permission was issued: reports must remain blocked'
         assert request('0'*64)[1]['code']=='signature'
         assert request(report_key,True)[1]['code']=='clock'
-        (target/'result.json').write_text(json.dumps(dict(ok=True,optimizedApk=True,version=health['appVersion'],validSignatureAccepted=True,licenseStillRequired=True)))
-        print('Optimized APK: real HTTP reports route, signatures, clock and licensing verified.')
+        now=int(time.time()*1000);nonce=secrets.token_hex(32);payload='{"action":"bootstrap"}'
+        body=dict(time=now,nonce=nonce,payload=payload,signature=mac(key,f'{cluster}|control-request|{now}|{nonce}|{payload}'))
+        native=urllib.request.Request('http://127.0.0.1:18787/control',data=json.dumps(body).encode(),headers={'Content-Type':'application/json'})
+        with urllib.request.urlopen(native,timeout=5) as response:native_reply=json.load(response)
+        assert hmac.compare_digest(native_reply['signature'],mac(key,f'{cluster}|control-reply|{nonce}|'+native_reply['payload']))
+        native_body=json.loads(native_reply['payload'])
+        assert native_body['controlProtocol']==1 and native_body['ok'] is False and native_body['definitive'] is False,'No lease was issued: iPhone must not receive an approval'
+        (target/'result.json').write_text(json.dumps(dict(ok=True,optimizedApk=True,version=health['appVersion'],validSignatureAccepted=True,licenseStillRequired=True,iosControlRoute=True,missingLeaseCannotGrant=True)))
+        print('Optimized APK: real HTTP reports and iPhone routes, signatures, clock, lease and licensing verified.')
     finally:
         subprocess.run(['adb','shell','am','force-stop',package],capture_output=True)
         subprocess.run(['adb','uninstall',package],capture_output=True)
