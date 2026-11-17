@@ -32,7 +32,7 @@ public enum Wire {
  public static func b64(_ data:Data)->String{data.base64EncodedString().replacingOccurrences(of:"+",with:"-").replacingOccurrences(of:"/",with:"_").replacingOccurrences(of:"=",with:"")}
  public static func unb64(_ value:String)throws->Data{let s=value.replacingOccurrences(of:"-",with:"+").replacingOccurrences(of:"_",with:"/");guard let data=Data(base64Encoded:s+String(repeating:"=",count:(4-s.count%4)%4)) else{throw ComedorError("Código incompleto.")};return data}
  public static func random()->String{hex(SymmetricKey(size:.bits256).withUnsafeBytes{Array($0)})}
- public static func matches(_ s:String,_ pattern:String)->Bool{s.range(of:"^(?:"+pattern+")$",options:.regularExpression) != nil}
+ public static func matches(_ s:String,_ pattern:String)->Bool{guard let range=s.range(of:"^(?:"+pattern+")$",options:.regularExpression)else{return false};return range==s.startIndex..<s.endIndex}
  public static func p256(_ key:String,_ message:String,_ signature:String,urlSafe:Bool=false)throws->Bool{let kd=try urlSafe ? unb64(key):decodeBase64(key);let sd=try urlSafe ? unb64(signature):decodeBase64(signature);let k=try P256.Signing.PublicKey(derRepresentation:kd);return k.isValidSignature(try P256.Signing.ECDSASignature(derRepresentation:sd),for:Data(message.utf8))}
  public static func decodeBase64(_ value:String)throws->Data{guard let data=Data(base64Encoded:value)else{throw ComedorError("Firma incompleta.")};return data}
  public static var now:Int64{Int64(Date().timeIntervalSince1970*1000)}
