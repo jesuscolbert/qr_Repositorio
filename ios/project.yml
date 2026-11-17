@@ -25,12 +25,15 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: bo.colbert.comedor.control
+        TARGETED_DEVICE_FAMILY: '1'
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SUPPORTS_MACCATALYST: NO
         SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO
     info:
       path: App/Info.plist
       properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleDisplayName: Colbert Comedor
         LSRequiresIPhoneOS: true
         NSCameraUsageDescription: Escanear credenciales QR, registrar comidas y vincular trabajadores.
