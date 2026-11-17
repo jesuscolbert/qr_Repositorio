@@ -1,3 +1,11 @@
+## Actualización 1.15.1: respuesta del escáner
+
+Las cuentas reutilizan en memoria los valores ya descifrados y las firmas ya verificadas únicamente mientras coincidan el valor persistido, la autoridad y la empresa. Los cambios de permisos o revocaciones invalidan las lecturas de las otras instancias; no se cachea una decisión de acceso independiente del permiso vigente.
+
+Entre teléfonos compatibles, el escaneo normal consulta el servidor y recibe el resultado con una página acotada de registros. La copia autenticada queda guardada antes de mostrar una nueva entrega permitida. La sincronización general continúa en segundo plano. Si hay datos locales sin compartir, un servidor anterior o un historial pendiente de más de una página, se conserva la ruta completa de recuperación. Una respuesta perdida mantiene la operación pendiente y no concede otra ración.
+
+No cambia la base SQLite, las credenciales de obreros, las licencias ni el contrato de reportes Windows. La app del obrero conserva su QR y descarga su historial aunque el PIN del encargado esté bloqueado, siempre que el servidor siga autorizado. El QR sigue sujeto a su vigencia, identidad y revocaciones recibidas.
+
 # SOBOCE Comedor
 
 ## Cuentas del personal — SOBOCE y FRIGOR 1.15.0

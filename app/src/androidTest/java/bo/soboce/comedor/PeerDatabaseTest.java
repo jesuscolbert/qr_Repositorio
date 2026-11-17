@@ -299,6 +299,30 @@ public class PeerDatabaseTest {
             try{PeerCards.resolve(local,b,fake,now);fail("Tampered shared card");}catch(IllegalArgumentException expected){}
         }finally{context.deleteDatabase("shared-cards.db");}
     }
+    @Test public void fastScanCopiesReceiptWithoutHistoryRoundTripsAndSurvivesOfflineRestart()throws Exception{
+        String serverFile="fast-server.db",clientFile="fast-client.db";context.deleteDatabase(serverFile);context.deleteDatabase(clientFile);
+        PeerConfig leaderConfig=sharedConfig(0,"b".repeat(64)),clientConfig=sharedConfig(1,"c".repeat(64));PeerEngine leader=new PeerEngine(context,leaderConfig,serverFile),client=new PeerEngine(context,clientConfig,clientFile);int[] calls={0};boolean[] online={true};
+        try{
+            client.shared=new SharedNetwork(client){@Override JSONObject rpc(JSONObject request)throws Exception{calls[0]++;if(!online[0])throw new IOException("offline");return leader.shared.dispatch(new JSONObject(request.toString()));}@Override synchronized void exchange(){throw new AssertionError("A regular scan must not wait for full history");}};
+            elect(new PeerEngine[]{leader,client},0,1);JSONObject request=sharedRequest(1,"almuerzo");
+            assertEquals("accepted",client.request(request).getString("status"));assertEquals(2,calls[0]);assertFalse(client.shared.ledger.eventFor(request.getString("requestId")).isEmpty());assertEquals(1,client.offline.records().size());assertEquals("",client.db.meta("remoteAttempt:"+request.getString("requestId"),""));
+            assertEquals("duplicate",client.request(sharedRequest(1,"dieta")).getString("status"));assertEquals(1,leader.offline.records().size());
+            client.close();client.db.close();online[0]=false;
+            try(PeerEngine restarted=new PeerEngine(context,clientConfig,clientFile){@Override public void close(){super.close();db.close();}}){assertEquals("duplicate",restarted.request(sharedRequest(1,"almuerzo")).getString("status"));assertEquals(1,restarted.offline.records().size());}
+        }finally{leader.close();leader.db.close();client.close();client.db.close();context.deleteDatabase(serverFile);context.deleteDatabase(clientFile);}
+    }
+    @Test public void fastScanLostResponseAndLargeReceiptGapNeverAuthorizeTwice()throws Exception{
+        String serverFile="fast-gap-server.db",clientFile="fast-gap-client.db";context.deleteDatabase(serverFile);context.deleteDatabase(clientFile);
+        PeerEngine leader=new PeerEngine(context,sharedConfig(0,"d".repeat(64)),serverFile),client=new PeerEngine(context,sharedConfig(1,"e".repeat(64)),clientFile);boolean[] lose={true};
+        try{
+            client.shared=new SharedNetwork(client){@Override JSONObject rpc(JSONObject r)throws Exception{JSONObject response=leader.shared.dispatch(new JSONObject(r.toString()));if(lose[0]&&r.optString("method").equals("scan"))throw new IOException("response lost after commit");return response;}};
+            elect(new PeerEngine[]{leader,client},0,1);JSONObject first=sharedRequest(1,"almuerzo");assertFalse(client.request(first).getBoolean("ok"));assertEquals(1,leader.offline.records().size());assertEquals(0,client.offline.records().size());
+            lose[0]=false;assertEquals("recovered",client.request(first).getString("status"));assertEquals(1,leader.offline.records().size());assertEquals(1,client.offline.records().size());
+            // More than one page is ahead: a green result still requires the actual receipt.
+            long now=System.currentTimeMillis();for(int i=1;i<=25;i++){String qr=PeerCards.request(leader.db,leader.config,enrollmentRequest("70000"+i,"Prueba "+i).put("plant","Planta 0"),now).getString("qr");leader.request(sharedRequest(0,"cena").put("qr",qr));}
+            JSONObject next=sharedRequest(1,"cena");assertEquals("accepted",client.request(next).getString("status"));assertFalse(client.shared.ledger.eventFor(next.getString("requestId")).isEmpty());assertEquals(27,client.offline.records().size());assertEquals(27,leader.offline.records().size());
+        }finally{leader.close();leader.db.close();client.close();client.db.close();context.deleteDatabase(serverFile);context.deleteDatabase(clientFile);}
+    }
     @Test public void sharedReplicationFailoverOfflineRejoinAndAllPlantFeed() throws Exception {
         PeerEngine[] engines=new PeerEngine[4];final int[] leader={0};boolean[] online={true,true,true,true};
         try{

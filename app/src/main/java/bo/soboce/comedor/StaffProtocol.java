@@ -10,12 +10,16 @@ import java.util.*;
 final class StaffProtocol {
  static final String CERT="CSA1:", REQUEST="CSR1:", MASTER="CSM1:";
  static final List<String> ACTIONS=Arrays.asList("scan","link","people","report","issue","worker","visitor");
+ private static final Map<String,String> verified=new LinkedHashMap<String,String>(128,.75f,true){protected boolean removeEldestEntry(Map.Entry<String,String> e){return size()>128;}};
  static JSONObject open(String cert,PeerConfig config)throws Exception {
   PeerConfig.require(cert!=null&&cert.startsWith(CERT)&&cert.length()<=1048576,"Permiso de cuenta inválido.");
+  String authority=config.raw.getString("staffAuthority"),cacheKey=authority+"|"+config.cluster+"|"+cert;
+  // Cache only small, cryptographically verified certificates; return defensive copies.
+  if(cert.length()<=16384)synchronized(verified){String body=verified.get(cacheKey);if(body!=null)return new JSONObject(body);}
   String[] parts=cert.substring(CERT.length()).split("\\.",-1);PeerConfig.require(parts.length==2,"Permiso incompleto.");
   PeerConfig.require(WalletProtocol.verify(config.raw.getString("staffAuthority"),CERT+parts[0],parts[1]),"Firma de cuenta no válida.");
   JSONObject body=new JSONObject(new String(Base64.getUrlDecoder().decode(parts[0]),StandardCharsets.UTF_8));
-  PeerConfig.require(body.getString("cluster").equals(config.cluster),"La cuenta pertenece a otra empresa.");return body;
+  PeerConfig.require(body.getString("cluster").equals(config.cluster),"La cuenta pertenece a otra empresa.");if(cert.length()<=16384)synchronized(verified){verified.put(cacheKey,body.toString());}return body;
  }
  static JSONObject grant(String cert,PeerConfig config)throws Exception {
   JSONObject g=open(cert,config);PeerConfig.require(g.getString("kind").equals("grant")&&g.getString("id").matches("[a-f0-9-]{36}")&&g.getString("device").matches("[a-f0-9]{64}")&&g.getLong("revision")>0&&g.getLong("issued")>0,"Cuenta incompatible.");

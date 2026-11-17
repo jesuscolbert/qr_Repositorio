@@ -87,4 +87,28 @@ public class StaffTest {
   authorize("master",true,"Planta Norte","Planta Sur");android.app.Instrumentation i=InstrumentationRegistry.getInstrumentation();StaffActivity activity=(StaffActivity)i.startActivitySync(new android.content.Intent(fixture.context,StaffActivity.class).putExtra("company","soboce").putExtra("manage",true).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));PeerDatabaseTest ui=new PeerDatabaseTest();try{ui.waitText(activity,"Encargados y permisos");ui.screenshot("30-maestro-cuentas");}finally{i.runOnMainSync(activity::finish);}
   authorize("encargado",true,"Planta Norte");StaffActivity operator=(StaffActivity)i.startActivitySync(new android.content.Intent(fixture.context,StaffActivity.class).putExtra("company","soboce").putExtra("manage",true).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));try{ui.waitText(operator,"Mi cuenta");ui.screenshot("31-encargado-cuenta");}finally{i.runOnMainSync(operator::finish);}
  }
+ @Test public void cachedAccountsObserveChangesAcrossInstancesAndNeverTrustModifiedCertificates()throws Exception{
+  String cert=authorize("encargado",true,"Planta Norte");StaffAccess service=new StaffAccess(fixture.context,config);assertTrue(service.authorized());
+  long start=android.os.SystemClock.elapsedRealtime();for(int i=0;i<100;i++)assertTrue(service.authorized());long millis=android.os.SystemClock.elapsedRealtime()-start;
+  java.io.File folder=new java.io.File(fixture.context.getExternalFilesDir(null),"staff-performance");folder.mkdirs();try(java.io.FileWriter w=new java.io.FileWriter(new java.io.File(folder,"authorization.json"))){w.write(new JSONObject().put("cachedAuthorizationChecks",100).put("elapsedMs",millis).toString());}
+  PeerDatabaseTest ui=new PeerDatabaseTest();ui.shellUi("mkdir -p /sdcard/Download/soboce-design");ui.shellUi("cp "+new java.io.File(folder,"authorization.json").getAbsolutePath()+" /sdcard/Download/soboce-design/authorization.json");
+  // Cached JSON objects are copies, not mutable shared authority state.
+  StaffProtocol.grant(cert,config).put("role","master");assertEquals("encargado",StaffProtocol.grant(cert,config).getString("role"));
+  authorize("encargado",false,"Planta Norte");assertFalse(service.authorized());authorize("admin",true,"Planta Sur");assertTrue(service.authorized());assertFalse(service.can("scan")&&StaffProtocol.contains(service.grant().getJSONArray("plants"),"Planta Norte"));
+  auth.companyVault.remove("staffCert:"+auth.profile);assertFalse(service.authorized());auth.companyVault.put("staffCert:"+auth.profile,cert);assertFalse(service.authorized());
+  Vault another=new Vault(fixture.context,"soboce");another.put("cache-test","first");assertEquals("first",auth.companyVault.get("cache-test"));another.put("cache-test","second");assertEquals("second",auth.companyVault.get("cache-test"));another.remove("cache-test");assertEquals("",auth.companyVault.get("cache-test"));
+  PeerConfig wrong=new PeerConfig(config.raw.toString());wrong.raw.put("staffAuthority",WalletProtocol.publicText(WalletTest.key().getPublic()));WalletTest.rejected(()->StaffProtocol.grant(cert,wrong));
+ }
+ @Test public void existingWorkerCredentialAndDesktopKeepWorkingWhenStaffPinIsLocked()throws Exception{
+  // Issue the worker credential using the pre-account configuration, then keep it.
+  JSONObject legacyRaw=new JSONObject(config.raw.toString());legacyRaw.remove("staffAuthority");PeerConfig legacy=new PeerConfig(legacyRaw.toString());WalletTest.Memory remote=new WalletTest.Memory();remote.now=System.currentTimeMillis();KeyPair worker=WalletTest.key();
+  String pair=WalletProtocol.pair(worker.getPrivate(),worker.getPublic(),WalletProtocol.nonce(),remote.now),cert=new WalletRegistry(db,legacy,remote).bind("CI-0012345",pair,0,Companies.license(fixture.context,"soboce"),remote.now);
+  authorize("encargado",true,"Planta Norte");String qr=WalletProtocol.qr(cert,worker.getPrivate(),System.currentTimeMillis());assertEquals("accepted",new SharedLedger(db,config).scan(scan(qr,"almuerzo","Planta Norte"),config.operator(-1),System.currentTimeMillis()).getString("status"));assertEquals("duplicate",new SharedLedger(db,config).scan(scan(north,"dieta","Planta Norte"),config.operator(-1),System.currentTimeMillis()).getString("status"));
+  try(PeerEngine engine=new PeerEngine(fixture.context,config){@Override WalletRegistry walletRegistry(){return new WalletRegistry(db,config,remote);}@Override public void close(){super.close();db.close();}}){
+   new PeerDatabaseTest().elect(new PeerEngine[]{engine},0,1);engine.start();StaffAccess.lock();assertTrue(engine.shared.leading());
+   JSONObject history=WalletTest.walletPost(engine.localPort,WalletProtocol.historyRequest(cert,worker.getPrivate(),System.currentTimeMillis()));assertEquals(2,history.getJSONArray("items").length());assertEquals("CI-0012345",WalletProtocol.certificate(history.getString("certificate")).getString("p"));assertFalse(history.toString().contains("Persona Sur"));
+   DesktopReports reports=new DesktopReports(engine);JSONObject query=new JSONObject().put("action","report").put("period","day").put("date",MealLedger.day(System.currentTimeMillis())).put("plant","");assertEquals(2,new JSONObject(ExcelReportTest.post(engine.localPort,ExcelReportTest.sign(reports.key(),query)).getString("payload")).getInt("count"));
+   authorize("encargado",false,"Planta Norte");assertFalse(engine.shared.leading());
+  }
+ }
 }

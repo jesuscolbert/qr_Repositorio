@@ -17,6 +17,8 @@ final class StaffAccess {
  static volatile String unlocked="";static volatile long backgroundAt;static int activities;
  private static final Object CACHE_LOCK=new Object();
  private volatile long refreshed;
+ private volatile String cachedPublicKey;
+ private String indexedDirectory="";private final Map<String,String> indexedAccounts=new HashMap<>();
  StaffAccess(Context c,PeerConfig config)throws Exception {this.context=c.getApplicationContext();this.config=config;global=new Vault(c,Companies.primary(c));companyVault=new Vault(c,Companies.company(c,config));profile=global.get("staffSelected");config.staff=this;}
  static boolean enabled(PeerConfig c){return c.shared&&!c.raw.optString("staffAuthority").isEmpty();}
  static StaffAccess attach(Context c,PeerConfig config)throws Exception{return enabled(config)?new StaffAccess(c,config):null;}
@@ -28,7 +30,7 @@ final class StaffAccess {
  JSONObject local()throws Exception {JSONArray a=profiles();for(int i=0;i<a.length();i++)if(a.getJSONObject(i).getString("profile").equals(profile))return a.getJSONObject(i);throw new IllegalArgumentException("Crea o selecciona tu perfil personal.");}
  private static String alias(String profile){return "comedor-staff-"+profile;}
  PrivateKey key()throws Exception {KeyStore store=KeyStore.getInstance("AndroidKeyStore");store.load(null);return (PrivateKey)store.getKey(alias(profile),null);}
- String publicKey()throws Exception {KeyStore store=KeyStore.getInstance("AndroidKeyStore");store.load(null);return WalletProtocol.publicText(store.getCertificate(alias(profile)).getPublicKey());}
+ String publicKey()throws Exception {String value=cachedPublicKey;if(value!=null)return value;KeyStore store=KeyStore.getInstance("AndroidKeyStore");store.load(null);value=WalletProtocol.publicText(store.getCertificate(alias(profile)).getPublicKey());cachedPublicKey=value;return value;}
  String create(String name,String pin)throws Exception {
   PeerConfig.require(name.trim().length()>=3&&name.trim().length()<=100&&pin.matches("[0-9]{6}"),"Escribe tu nombre y un PIN de seis números.");
   JSONArray a=profiles();PeerConfig.require(a.length()<10,"Este teléfono ya tiene diez perfiles.");String id=UUID.randomUUID().toString(),salt=PeerConfig.random();
@@ -69,7 +71,7 @@ final class StaffAccess {
  private void saveGrant(String value)throws Exception {JSONObject g=StaffProtocol.grant(value,config);String old=certificate();if(!old.isEmpty()&&StaffProtocol.grant(old,config).getLong("revision")>g.getLong("revision"))return;companyVault.put("staffCert:"+profile,value);}
  void refresh(boolean force)throws Exception {long now=SystemClock.elapsedRealtime();if(!force&&now-refreshed<30000)return;remote("status",new JSONObject());refreshed=now;}
  JSONObject directory()throws Exception {String value=companyVault.get("staffDirectory");return value.isEmpty()?null:StaffProtocol.open(value,config);}
- JSONObject currentFor(String cert)throws Exception {JSONObject g=StaffProtocol.grant(cert,config),dir=directory();if(dir!=null){JSONArray all=dir.getJSONArray("accounts");for(int i=0;i<all.length();i++){JSONObject u=StaffProtocol.grant(all.getString(i),config);if(u.getString("id").equals(g.getString("id"))&&u.getLong("revision")>=g.getLong("revision"))return u;}}return g;}
+ synchronized JSONObject currentFor(String cert)throws Exception {JSONObject g=StaffProtocol.grant(cert,config);String raw=companyVault.get("staffDirectory");if(!raw.equals(indexedDirectory)){Map<String,String> updated=new HashMap<>();if(!raw.isEmpty()){JSONObject dir=StaffProtocol.open(raw,config);PeerConfig.require(dir.getString("kind").equals("directory"),"Lista de cuentas inválida.");JSONArray all=dir.getJSONArray("accounts");for(int i=0;i<all.length();i++){JSONObject u=StaffProtocol.grant(all.getString(i),config);PeerConfig.require(updated.put(u.getString("id"),u.toString())==null,"Cuenta repetida.");}}indexedAccounts.clear();indexedAccounts.putAll(updated);indexedDirectory=raw;}String value=indexedAccounts.get(g.getString("id"));if(value!=null){JSONObject current=new JSONObject(value);if(current.getLong("revision")>=g.getLong("revision"))return current;}return g;}
  JSONObject authenticate(JSONObject proof,String route)throws Exception {String cert=proof.getString("certificate");JSONObject g=StaffProtocol.grant(cert,config),current=currentFor(cert);PeerConfig.require(current.getBoolean("active")&&current.getString("key").equals(g.getString("key"))&&current.getLong("revision")==g.getLong("revision")&&current.getLong("revision")==g.getLong("revision"),"Cuenta desactivada o permisos actualizados. Sincroniza tu acceso.");return StaffProtocol.verifyProof(proof,route,config,System.currentTimeMillis(),g);}
  JSONObject networkProof(String route,JSONObject request)throws Exception {JSONObject g=grant();PeerConfig.require(g.getBoolean("active"),"Cuenta desactivada.");return sign(route,request).put("certificate",certificate());}
  JSONArray users()throws Exception {JSONObject d=directory();JSONArray result=new JSONArray();if(d!=null){JSONArray all=d.getJSONArray("accounts");for(int i=0;i<all.length();i++)result.put(StaffProtocol.grant(all.getString(i),config));}return result;}

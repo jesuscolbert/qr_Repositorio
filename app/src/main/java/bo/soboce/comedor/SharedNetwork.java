@@ -42,7 +42,7 @@ class SharedNetwork {
             engine.state=detail+" · "+recent+" · "+ledger.pending()+(leading()?" entregas de este servidor sin copia confirmada en otro teléfono":" entregas locales pendientes de llegar al servidor");
         }catch(Exception ignored){engine.state=detail;}
     }
-    JSONObject status() throws Exception {return new JSONObject().put("protocol",protocol()).put("device",config.device).put("epoch",lease.epoch).put("vector",ledger.vector()).put("rosterVector",new RosterLedger(engine.db,config).vector()).put("oldVector",engine.offline.vector()).put("applied",engine.db.applied());}
+    JSONObject status() throws Exception {return new JSONObject().put("protocol",protocol()).put("fastScan",1).put("device",config.device).put("epoch",lease.epoch).put("vector",ledger.vector()).put("rosterVector",new RosterLedger(engine.db,config).vector()).put("oldVector",engine.offline.vector()).put("applied",engine.db.applied());}
     JSONObject handle(JSONObject envelope) throws Exception {
         PeerConfig.require(leading(),"Servidor relevado.");
         String nonce=envelope.getString("nonce"),payload=envelope.getString("payload");long time=envelope.getLong("time"),epoch=envelope.getLong("epoch");
@@ -59,7 +59,13 @@ class SharedNetwork {
         PeerConfig.require(leading(),"Servidor relevado.");String method=r.getString("method");
         if(method.equals("status"))return status();
         PeerConfig.require(r.optInt("protocol")==protocol(),"Actualiza y autoriza todos los teléfonos para compartir cuentas y consumos.");
-        if(method.equals("scan"))return ledger.scan(r.getJSONObject("request"),config.staff==null?r.getJSONObject("operator"):StaffProtocol.operator(StaffProtocol.grant(r.getJSONObject("request").getJSONObject("staffProof").getString("certificate"),config)),System.currentTimeMillis(),engine.license.allowed());
+        if(method.equals("scan")){synchronized(engine.db){
+            JSONObject reply=ledger.scan(r.getJSONObject("request"),config.staff==null?r.getJSONObject("operator"):StaffProtocol.operator(StaffProtocol.grant(r.getJSONObject("request").getJSONObject("staffProof").getString("certificate"),config)),System.currentTimeMillis(),engine.license.allowed());
+            // Return a bounded, contiguous receipt page with the result. The client
+            // persists it before showing green; full history exchange stays separate.
+            if(r.optInt("fastScan")==1)reply.put("scanSync",new JSONObject().put("events",ledger.events(r.getJSONObject("after"),20)).put("rosterEvents",new RosterLedger(engine.db,config).events(r.getJSONObject("rosterAfter"),20)).put("vector",ledger.vector()));
+            return reply;
+        }}
         PeerConfig.require(method.equals("exchange"),"Método inválido.");
         String source=r.getString("device");PeerConfig.require(source.matches("[a-f0-9]{64}")&&!source.equals(config.device),"Instalación repetida.");
         synchronized(engine.db){
@@ -109,7 +115,37 @@ class SharedNetwork {
         }
         detail=complete?"Conectado · trabajadores y entregas compartidos":"Compartiendo historial; continuará automáticamente";
     }
+    static boolean ahead(JSONObject local,JSONObject remote){Iterator<String> keys=local.keys();while(keys.hasNext()){String key=keys.next();if(local.optLong(key)>remote.optLong(key))return true;}return false;}
+    boolean hasUnsent(JSONObject remote)throws Exception {synchronized(engine.db){
+        JSONArray localOld=engine.offline.vector(),remoteOld=remote.getJSONArray("oldVector");for(int i=0;i<localOld.length();i++)if(localOld.optLong(i)>remoteOld.optLong(i))return true;
+        return engine.db.applied()>remote.getLong("applied")||ahead(ledger.vector(),remote.getJSONObject("vector"))||ahead(new RosterLedger(engine.db,config).vector(),remote.getJSONObject("rosterVector"));
+    }}
     JSONObject scan(JSONObject request) throws Exception {
+        String id=request.getString("requestId"),marker="remoteAttempt:"+id;
+        JSONObject saved=engine.db.get("shared_results",id);
+        if(saved!=null){PeerConfig.require(OfflineLedger.sameRequest(request,saved.getJSONObject("request")),"Solicitud incompatible.");return SharedLedger.recovered(saved.getJSONObject("reply"));}
+        // Recovery, local leadership and older servers keep their established path.
+        if(leading()||!engine.db.meta(marker,"").isEmpty())return legacyScan(request);
+        JSONObject remote;
+        try{remote=rpc(new JSONObject().put("method","status"));}
+        catch(Exception offline){return ledger.scan(request,config.operator(-1),System.currentTimeMillis(),engine.license.allowed());}
+        PeerConfig.require(remote.getInt("protocol")==protocol()&&!remote.getString("device").equals(config.device),"Actualiza y autoriza los teléfonos.");
+        if(remote.optInt("fastScan")!=1||hasUnsent(remote))return legacyScan(request);
+        JSONObject call=new JSONObject().put("method","scan").put("protocol",protocol()).put("fastScan",1).put("request",request).put("operator",config.operator(-1));
+        synchronized(engine.db){call.put("after",ledger.vector()).put("rosterAfter",new RosterLedger(engine.db,config).vector());engine.db.putMeta(marker,Long.toString(lease.epoch));}
+        try{
+            JSONObject reply=rpc(call),copy=reply.optJSONObject("scanSync");
+            if(copy!=null){synchronized(engine.db){new RosterLedger(engine.db,config).merge(copy.getJSONArray("rosterEvents"));ledger.merge(copy.getJSONArray("events"));ledger.acknowledge(copy.getJSONObject("vector"));}}
+            reply.remove("scanSync");
+            // A busy server may have more than one page ahead. Do not show a new
+            // delivery until its durable receipt is present, even across a restart.
+            if(reply.optString("status").equals("accepted")&&ledger.eventFor(id).isEmpty())exchange();
+            if(reply.optString("status").equals("accepted"))PeerConfig.require(!ledger.eventFor(id).isEmpty(),"Falta confirmar la copia local de la entrega.");
+            if(reply.optBoolean("ok")||reply.optBoolean("definitive")){synchronized(engine.db){engine.db.save("shared_results",id,new JSONObject().put("request",request).put("reply",reply));engine.db.putMeta(marker,"");}lastExchange=System.currentTimeMillis();}
+            return reply;
+        }catch(Exception unknown){return uncertain();}
+    }
+    JSONObject legacyScan(JSONObject request) throws Exception {
         String id=request.getString("requestId"),marker="remoteAttempt:"+id;
         JSONObject saved=engine.db.get("shared_results",id);
         if(saved!=null){PeerConfig.require(OfflineLedger.sameRequest(request,saved.getJSONObject("request")),"Solicitud incompatible.");return SharedLedger.recovered(saved.getJSONObject("reply"));}
