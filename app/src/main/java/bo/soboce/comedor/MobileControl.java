@@ -27,7 +27,7 @@ final class MobileControl {
    JSONArray ids=new JSONArray(),documents=new JSONArray(),keys=new JSONArray();
    for(int i=0;i<c.seed.getJSONArray("people").length();i++){JSONObject p=c.seed.getJSONArray("people").getJSONObject(i);ids.put(p.getString("id"));if(!p.optString("documento").isEmpty())documents.put(p.getString("documento"));}
    for(int i=0;i<c.nodes.length();i++)keys.put(c.nodes.getJSONObject(i).getString("publicKey"));
-   return MealLedger.ok().put("cluster",c.cluster).put("plants",c.seed.getJSONArray("plants")).put("rates",c.seed.getJSONArray("rates")).put("ratesConfigured",c.seed.optBoolean("ratesConfigured",true)).put("seedIds",ids).put("seedDocuments",documents).put("legacyKeys",keys).put("personPrefix",c.manifest.optString("installation").startsWith("frigor-")?"FRIGOR-CI-":"CI-");
+   return MealLedger.ok().put("cluster",c.cluster).put("plants",c.seed.getJSONArray("plants")).put("rates",c.seed.getJSONArray("rates")).put("ratesConfigured",c.seed.optBoolean("ratesConfigured",true)).put("seedIds",ids).put("seedDocuments",documents).put("legacyKeys",keys).put("legacyOperators",c.nodes).put("personPrefix",c.manifest.optString("installation").startsWith("frigor-")?"FRIGOR-CI-":"CI-");
   }
   if(action.equals("page"))return page(r,now);
   if(action.equals("sync")){
@@ -39,11 +39,11 @@ final class MobileControl {
   }
   if(action.equals("recover")){
    JSONObject req=r.getJSONObject("request");String id=req.getString("requestId");PeerConfig.require(id.matches("[a-f0-9-]{36}"),"Solicitud inválida.");
-   synchronized(db){JSONObject saved=db.get("shared_results",id);if(saved==null)return SharedNetwork.uncertain();PeerConfig.require(OfflineLedger.sameRequest(req,saved.getJSONObject("request")),"Solicitud incompatible.");return SharedLedger.recovered(saved.getJSONObject("reply"));}
+   synchronized(db){JSONObject saved=db.get("shared_results",id);if(saved==null)return SharedNetwork.uncertain();PeerConfig.require(OfflineLedger.sameRequest(req,saved.getJSONObject("request")),"Solicitud incompatible.");return SharedLedger.recovered(saved.getJSONObject("reply")).put("receipt",new SharedLedger(db,c).eventFor(id));}
   }
   if(action.equals("scan")){
    PeerConfig.require(r.getLong("epoch")==epoch,"El servidor cambió antes de registrar. Vuelve a sincronizar.");
-   return new SharedLedger(db,c).scan(r.getJSONObject("request"),r.getJSONObject("operator"),now,engine.license.allowed());
+   SharedLedger ledger=new SharedLedger(db,c);JSONObject req=r.getJSONObject("request");return ledger.scan(req,r.getJSONObject("operator"),now,engine.license.allowed()).put("receipt",ledger.eventFor(req.getString("requestId")));
   }
   if(action.equals("walletStatus")||action.equals("walletBind")||action.equals("walletRevoke")){
    QrPrintData.requirePermission(engine.license);WalletRegistry wallet=engine.walletRegistry();String person=r.getString("personId");wallet.authority(wallet.person(person));

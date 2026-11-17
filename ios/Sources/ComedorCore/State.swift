@@ -8,7 +8,7 @@ public struct CompanyState:Codable,Sendable {
  public var pending:J?;public var license:LicenseCache?;public var lastSync:Int64=0,epoch:Int64=0,sequence:Int64=0,rosterSequence:Int64=0,lastMealTime:Int64=0
  public init(profile:Profile){self.profile=profile}
  public var plants:[String]{catalog["plants"].a.map(\.s)}
- public var initialized:Bool{catalog["cluster"].s==profile.cluster && !plants.isEmpty() && lastSync>0}
+ public var initialized:Bool{catalog["cluster"].s==profile.cluster && !plants.isEmpty && lastSync>0}
  public func op(name:String,plant:String)->J{["name":.string(name),"role":"admin","plant":.string(plant)]}
  public var permitted:Bool{License.allowed(license,config:profile.license)}
  public mutating func checkpoint(wall:Int64=Wire.now,uptime:Double=ProcessInfo.processInfo.systemUptime){guard var cache=license,let c=try? License.verify(cache.envelope,key:cache.publicKey,config:profile.license)else{return};let now=License.now(cache,claims:c,wall:wall,uptime:uptime);if now>cache.checkpoint{cache.checkpoint=now;cache.lastWall=wall;license=cache}}

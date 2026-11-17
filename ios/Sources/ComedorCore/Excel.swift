@@ -14,7 +14,7 @@ public enum Excel {
  }
  public static func workbook(company:String,period:String,plant:String,records:[J],lastSync:Int64,pending:Int,now:Int64=Wire.now)throws->Data{
   let people=Set(records.map{$0["persona"].s}),total=records.reduce(0){$0+$1["precio"].n};let unpriced=records.filter{$0["precioPendiente"].b}.count
-  let counts=Dictionary(grouping:records,by:{$0["clave"].s}),conflicts=records.filter{(counts[$0["clave"].s]?.count ?? 0)>1 || !$0["revision"].s.isEmpty()}.count
+  let counts=Dictionary(grouping:records,by:{$0["clave"].s}),conflicts=records.filter{(counts[$0["clave"].s]?.count ?? 0)>1 || !$0["revision"].s.isEmpty}.count
   let stamp="Emitido: \(Wire.date(now)) · Última sincronización: \(lastSync>0 ? Wire.date(lastSync):"pendiente") · \(pending) entregas pendientes de compartir."
   var summary=row(1,[text("\(company.uppercased()) · CONTROL DEL COMEDOR","A1",1)],height:34)+row(2,[text("\(period) · \(plant)","A2",5)])+row(3,[text(stamp,"A3",6)],height:30)
   summary += row(5,[text("RACIONES","A5",2),number(Double(records.count),"B5",4),text("TRABAJADORES","D5",2),number(Double(people.count),"E5",4)])
