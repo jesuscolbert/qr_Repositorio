@@ -13,7 +13,7 @@ public final class CredentialScanActivity extends CaptureActivity {
   getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE|WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
   getWindow().setStatusBarColor(0xff102039);getWindow().setNavigationBarColor(0xff102039);
   getWindow().getDecorView().setSystemUiVisibility(0);
-  if(android.os.Build.VERSION.SDK_INT>=30)getWindow().getInsetsController().setSystemBarsAppearance(0,WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS|WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS);
+  if(android.os.Build.VERSION.SDK_INT>=30){WindowInsetsController bars=getWindow().getInsetsController();if(bars!=null)bars.setSystemBarsAppearance(0,WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS|WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS);}
   LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(22),dp(16),dp(22),dp(20));root.setBackgroundColor(0xff102039);
   root.setOnApplyWindowInsetsListener((v,in)->{v.setPadding(dp(22),in.getSystemWindowInsetTop()+dp(16),dp(22),in.getSystemWindowInsetBottom()+dp(20));return in;});
   root.addView(label("MI COMEDOR  /  VINCULACIÓN",12,0xff7de5cd));
