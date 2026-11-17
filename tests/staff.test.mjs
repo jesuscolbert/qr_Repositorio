@@ -1,8 +1,9 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {timingSafeEqual} from 'node:crypto';
+import {deflateSync} from 'node:zlib';
 import worker,{LeaderLease} from '../backend/coordination/worker.mjs';
-import {staffOperation,authenticate,authorizeWallet,digest,b64,un64,rawToDer,verify} from '../backend/coordination/staff.mjs';
+import {staffOperation,authenticate,authorizeWallet,rosterBody,digest,b64,un64,rawToDer,verify} from '../backend/coordination/staff.mjs';
 const now=1794930000000,cluster='a'.repeat(64),bootstrap='b'.repeat(64),recovery='c'.repeat(64),enc=new TextEncoder();
 class Store{
  data=new Map();async get(k){return structuredClone(this.data.get(k));}async put(k,v){this.data.set(k,structuredClone(v));}async delete(k){this.data.delete(k);}
@@ -99,4 +100,8 @@ test('new worker proof binds its registered plant and rejects a modified registr
  const r={action:'bind',tag,plant:'Norte',roster:'SB4:'+b64(enc.encode(JSON.stringify({...signed,plant:'Sur'})))+'.unused'};
  await assert.rejects(authorizeWallet(s.tx,r,operator.user,s.env,now));assert.equal(await s.tx.get('staffSubject:'+tag),undefined);
  r.roster='SB4:'+b64(enc.encode(JSON.stringify(signed)))+'.unused';assert.equal(await authorizeWallet(s.tx,r,operator.user,s.env,now),null);assert.equal(await s.tx.get('staffSubject:'+tag),'Norte');
+ await s.tx.delete('staffSubject:'+tag);r.roster='SB5:'+b64(deflateSync(JSON.stringify(signed)))+'.unused';assert.equal(await authorizeWallet(s.tx,r,operator.user,s.env,now),null);assert.equal(await s.tx.get('staffSubject:'+tag),'Norte');
+});
+test('compressed credentials reject corruption and oversized decompression',async()=>{
+ await assert.rejects(rosterBody('SB5:invalid.unused'));await assert.rejects(rosterBody('SB5:'+b64(deflateSync('x'.repeat(9000)))+'.unused'),/demasiado grande/);
 });

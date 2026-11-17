@@ -95,6 +95,16 @@ export async function staffOperation(tx,envelope,env,now){
  throw Error('Acción de cuentas no reconocida.');
 }
 
+export async function rosterBody(qr){
+ require(typeof qr==='string'&&/^SB[45]:/.test(qr)&&qr.length<=8192,'Actualiza el padrón con el maestro.');
+ const [encoded]=qr.slice(4).split('.');let data=un64(encoded);
+ if(qr.startsWith('SB5:')){
+  const reader=new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate')).getReader();const chunks=[];let size=0;
+  try{while(true){const {done,value}=await reader.read();if(done)break;size+=value.length;require(size<=8192,'Credencial demasiado grande.');chunks.push(value);}}finally{await reader.cancel();}
+  data=new Uint8Array(size);let offset=0;for(const chunk of chunks){data.set(chunk,offset);offset+=chunk.length;}
+ }
+ require(data.length<=8192,'Credencial demasiado grande.');return JSON.parse(dec.decode(data));
+}
 export async function authorizeWallet(tx,r,user,env,now){
  if(r.action==='subjects'){
   require(user.role==='master'&&Array.isArray(r.items)&&r.items.length<=100,'Solo el maestro migra trabajadores anteriores.');
@@ -103,8 +113,7 @@ export async function authorizeWallet(tx,r,user,env,now){
  if(!['bind','revoke'].includes(r.action))return null;
  permission(user,'link',r.plant);let plant=await tx.get('staffSubject:'+r.tag);
  if(!plant&&typeof r.roster==='string'){
-  require(r.roster.startsWith('SB4:')&&r.roster.length<=8192,'Actualiza el padrón con el maestro.');
-  const [encoded]=r.roster.slice(4).split('.'),body=JSON.parse(dec.decode(un64(encoded))),proof=body.staff;require(proof,'El maestro debe sincronizar este trabajador anterior.');delete body.staff;
+  const body=await rosterBody(r.roster),proof=body.staff;require(proof,'El maestro debe sincronizar este trabajador anterior.');delete body.staff;
   const [grantData,grantSig]=proof.certificate.slice(5).split('.');require(proof.certificate.startsWith('CSA1:')&&await verify(policy(env).authority,'CSA1:'+grantData,grantSig),'Alta sin permiso individual.');const grant=JSON.parse(dec.decode(un64(grantData)));
   require(grant.cluster===policy(env).cluster&&grant.kind==='grant'&&grant.active&&grant.issued<=body.time+120000&&body.time<=now+120000);permission(grant,'worker',body.plant);
   require(await verify(grant.key,'staff-event|'+grant.cluster+'|roster|'+JSON.stringify(body),proof.signature),'Alta alterada.');

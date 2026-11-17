@@ -6,6 +6,8 @@ import android.database.sqlite.SQLiteDatabase;
 import org.json.*;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.io.*;
+import java.util.zip.*;
 
 /** Signed worker registrations are portable QR cards and an append-only replicated log. */
 final class RosterLedger {
@@ -37,7 +39,7 @@ final class RosterLedger {
             try(Cursor c=sql.rawQuery("SELECT COALESCE(MAX(seq),0)+1 FROM roster_events WHERE origin=?",new String[]{config.device})){c.moveToFirst();seq=c.getLong(0);}
             JSONObject b=new JSONObject().put("v",4).put("cluster",config.cluster).put("origin",config.device).put("seq",seq).put("time",now).put("operator",op).put("ci",ci).put("name",name).put("plant",plant);
             if(config.staff!=null)b.put("staff",StaffProtocol.evidence(config,config.staff,"roster",b.toString()));
-            String body=b.toString(),qr="SB4:"+Base64.getUrlEncoder().withoutPadding().encodeToString(body.getBytes(StandardCharsets.UTF_8))+"."+config.mac("worker|"+body);
+            String body=b.toString(),qr=(config.staff==null?"SB4:":"SB5:")+Base64.getUrlEncoder().withoutPadding().encodeToString(config.staff==null?body.getBytes(StandardCharsets.UTF_8):pack(body))+"."+config.mac("worker|"+body);
             accept(qr,now);JSONObject person=db.get("people",personId(ci));JSONObject reply=card(person).put("created",true);
             sql.setTransactionSuccessful();return reply;
         }finally{sql.endTransaction();}
@@ -48,10 +50,12 @@ final class RosterLedger {
         JSONObject result=PeerCards.request(db,config,new JSONObject().put("action","issue").put("plant",plant).put("personId",p.getString("id")),now);
         return result.put("alreadyExists",true).put("notice","Este carnet ya estaba registrado. Se conserva la misma persona y su historial.");
     }
-    static boolean format(String qr){return qr!=null&&qr.length()<=8192&&qr.matches("SB4:[A-Za-z0-9_-]+\\.[a-f0-9]{64}");}
+    static byte[] pack(String body)throws IOException {ByteArrayOutputStream out=new ByteArrayOutputStream();try(DeflaterOutputStream compressed=new DeflaterOutputStream(out)){compressed.write(body.getBytes(StandardCharsets.UTF_8));}return out.toByteArray();}
+    static String unpack(byte[] data)throws IOException {ByteArrayOutputStream out=new ByteArrayOutputStream();try(InputStream in=new InflaterInputStream(new ByteArrayInputStream(data))){byte[] block=new byte[1024];int n;while((n=in.read(block))!=-1){if(out.size()+n>8192)throw new IOException("Credencial demasiado grande.");out.write(block,0,n);}}return out.toString("UTF-8");}
+    static boolean format(String qr){return qr!=null&&qr.length()<=8192&&qr.matches("SB[45]:[A-Za-z0-9_-]+\\.[a-f0-9]{64}");}
     private JSONObject decode(String qr,long now)throws Exception{
         PeerConfig.require(config.shared&&format(qr),"Credencial de trabajador inválida.");
-        String[] parts=qr.substring(4).split("\\.",-1);String body=new String(Base64.getUrlDecoder().decode(parts[0]),StandardCharsets.UTF_8);
+        String[] parts=qr.substring(4).split("\\.",-1);byte[] data=Base64.getUrlDecoder().decode(parts[0]);String body=qr.startsWith("SB5:")?unpack(data):new String(data,StandardCharsets.UTF_8);
         PeerConfig.require(PeerConfig.equal(config.mac("worker|"+body),parts[1]),"Alta alterada o de otra empresa.");JSONObject b=new JSONObject(body);
         PeerConfig.require(b.getInt("v")==4&&b.getString("cluster").equals(config.cluster)&&b.getString("origin").matches("[a-f0-9]{64}")&&b.getLong("seq")>0&&b.getLong("seq")<2147483647L&&b.getLong("time")>0&&b.getLong("time")<=now+120000,"Identidad o fecha del alta inválida.");
         PeerConfig.require(document(b.getString("ci")).equals(b.getString("ci")),"Carnet no normalizado.");

@@ -45,6 +45,7 @@ export class LeaderLease {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if(request.method==='GET'&&url.pathname==='/health')return Response.json({service:'comedor-coordinador',accountsProtocol:1},{headers:{'Cache-Control':'no-store'}});
     if (request.method !== 'POST' || !['/lease','/wallet','/staff'].includes(url.pathname)) return new Response('Not found', {status: 404});
     // App-only secret, never a Cloudflare management token. Do not log requests.
     const supplied = request.headers.get('Authorization') || '';
@@ -53,12 +54,13 @@ export default {
     if (!env.NETWORK_KEY || a.length !== b.length || !crypto.subtle.timingSafeEqual(a, b)) return new Response('Unauthorized', {status: 401});
     const body = await request.text();
     if (body.length > 24000) return new Response('Too large', {status: 413});
-    try {
+    let stage='parse';try {
       const input = JSON.parse(body);
       // Validate before creating or accessing the single installation object.
-      if(url.pathname==='/staff')policy(env);
+      stage='policy';if(url.pathname==='/staff')policy(env);
       else if(!input.staff){if(url.pathname==='/lease')transition(undefined,input,Date.now());else validateWallet(input);}
+      stage='storage';
       return await env.LEADER.get(env.LEADER.idFromName('comedor')).fetch(new Request('https://internal'+url.pathname, {method: 'POST', body}));
-    } catch { return new Response('Invalid request', {status: 400}); }
+    } catch(e) { console.warn('coordinator_rejected',stage,e.name,e.message);return new Response('Invalid request', {status: 400}); }
   }
 };

@@ -7,13 +7,13 @@ from pathlib import Path
 import argparse,base64,hashlib,hmac,json,secrets,subprocess,time,urllib.request
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import serialization,hashes
-import qrcode
 
 ROOT=Path(__file__).resolve().parents[1]
 PRIVATE=ROOT/'private/staff-accounts'
 def b64(x):return base64.urlsafe_b64encode(x).decode().rstrip('=')
 def text(x):return json.dumps(x,ensure_ascii=False,separators=(',',':'))
 def prepare():
+ import qrcode
  PRIVATE.mkdir(parents=True,exist_ok=True);states={}
  for company,path in [('soboce','private/shared-network/bundle.json'),('frigor','private/frigor/network/bundle.json')]:
   original=ROOT/path;network=json.loads(original.read_text('utf-8-sig'));seed=json.loads(network['seed']);cluster=hashlib.sha256(network['manifest'].encode()).hexdigest();saved=PRIVATE/(company+'.json')

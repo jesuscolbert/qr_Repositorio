@@ -67,6 +67,11 @@ public class StaffTest {
   assertTrue(reply.optBoolean("ok"));String qr=reply.getString("qr");assertTrue(qr.length()<2900);assertTrue(QrPrintDocument.matrix(qr).getWidth()>0);assertEquals("CI-000778899",PeerCards.resolve(db,config,qr,now).getString("id"));
   db.close();db=new PeerDatabase(fixture.context,config);assertNotNull(db.get("people","CI-000778899"));assertEquals(1,new OfflineLedger(db,config).records().size());
  }
+ @Test public void longNamesRemainPrintableWithSignedPermissionsAndBadCompressedQrIsRejected()throws Exception{
+  authorize("admin",true,"Planta Norte","Planta Sur");String name="ÁÉÍÓÚÑ".repeat(16)+"Luis";JSONObject g=auth.grant();g.put("name",name).put("revision",++revision);auth.saveReply(new JSONObject().put("certificate",seal(g)));
+  JSONObject reply=PeerCards.request(db,config,fixture.worker("Planta Sur").put("document","000112233").put("name",name),now);assertTrue(reply.optBoolean("ok"));String qr=reply.getString("qr");assertTrue(qr.startsWith("SB5:"));assertTrue(qr.length()<2300);assertTrue(QrPrintDocument.matrix(qr).getWidth()>0);assertEquals(name,PeerCards.resolve(db,config,qr,now).getString("nombre"));
+  try{RosterLedger.unpack(RosterLedger.pack("x".repeat(9000)));fail("Oversized credential accepted");}catch(java.io.IOException expected){}
+ }
  @Test public void masterMenuAndOperatorMenuAreDifferentOnTheSameApk()throws Exception{
   authorize("master",true,"Planta Norte","Planta Sur");android.app.Instrumentation i=InstrumentationRegistry.getInstrumentation();StaffActivity activity=(StaffActivity)i.startActivitySync(new android.content.Intent(fixture.context,StaffActivity.class).putExtra("company","soboce").putExtra("manage",true).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));PeerDatabaseTest ui=new PeerDatabaseTest();try{ui.waitText(activity,"Encargados y permisos");ui.screenshot("30-maestro-cuentas");}finally{i.runOnMainSync(activity::finish);}
   authorize("encargado",true,"Planta Norte");StaffActivity operator=(StaffActivity)i.startActivitySync(new android.content.Intent(fixture.context,StaffActivity.class).putExtra("company","soboce").putExtra("manage",true).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));try{ui.waitText(operator,"Mi cuenta");ui.screenshot("31-encargado-cuenta");}finally{i.runOnMainSync(operator::finish);}
