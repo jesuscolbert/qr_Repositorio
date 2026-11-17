@@ -38,8 +38,9 @@ final class StaffProtocol {
   PeerConfig.require(Math.abs(now-time)<=120000&&nonce.matches("[a-f0-9]{64}")&&payload.length()<=1048576,"Solicitud vencida; comprueba la hora.");
   PeerConfig.require(grant.optBoolean("active")&&grant.getLong("issued")<=time+120000&&grant.getString("key").equals(proof.getString("key"))&&WalletProtocol.verify(grant.getString("key"),"staff-request|"+config.cluster+"|"+route+"|"+time+"|"+nonce+"|"+payload,proof.getString("signature")),"Solicitud de otro encargado.");return new JSONObject(payload);
  }
- static JSONObject evidence(PeerConfig config,StaffAccess auth,String purpose,String body)throws Exception{return new JSONObject().put("certificate",auth.certificate()).put("signature",WalletProtocol.sign(auth.key(),"staff-event|"+config.cluster+"|"+purpose+"|"+body));}
+ static JSONObject evidence(PeerConfig config,StaffAccess auth,String purpose,String body)throws Exception{return new JSONObject().put("certificate",auth.certificate()).put("payload",body).put("signature",WalletProtocol.sign(auth.key(),"staff-event|"+config.cluster+"|"+purpose+"|"+body));}
  static JSONObject verifyEvidence(PeerConfig config,JSONObject proof,String purpose,String body,long when)throws Exception{
-  JSONObject g=grant(proof.getString("certificate"),config);PeerConfig.require(g.optBoolean("active")&&g.getLong("issued")<=when+120000&&WalletProtocol.verify(g.getString("key"),"staff-event|"+config.cluster+"|"+purpose+"|"+body,proof.getString("signature")),"Registro sin autorización individual válida.");return g;
+  String payload=proof.optString("payload",body);PeerConfig.require(payload.length()<=8192&&new JSONObject(payload).toString().equals(new JSONObject(body).toString()),"Contenido del registro alterado.");
+  JSONObject g=grant(proof.getString("certificate"),config);PeerConfig.require(g.optBoolean("active")&&g.getLong("issued")<=when+120000&&WalletProtocol.verify(g.getString("key"),"staff-event|"+config.cluster+"|"+purpose+"|"+payload,proof.getString("signature")),"Registro sin autorización individual válida.");return g;
  }
 }

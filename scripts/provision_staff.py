@@ -37,7 +37,8 @@ def deploy(states):
  wrangler=ROOT/'.tools/worker-cli/node_modules/wrangler/bin/wrangler.js'
  for company,(state,network) in states.items():
   config=ROOT/f'backend/coordination/wrangler{".frigor" if company=="frigor" else ""}.jsonc'
-  for args in [('deploy','--config',str(config),'--keep-vars'),('secret','bulk',str(PRIVATE/(company+'-worker-secrets.json')),'--config',str(config))]:
+  # Final deployment immediately applies code and secrets to existing objects without changing storage.
+  for args in [('secret','bulk',str(PRIVATE/(company+'-worker-secrets.json')),'--config',str(config)),('deploy','--config',str(config),'--keep-vars')]:
    p=subprocess.run(['node',str(wrangler),*args],cwd=ROOT,capture_output=True,text=True,encoding='utf-8',errors='replace')
    (PRIVATE/(company+'-'+args[0]+'.log')).write_text(p.stdout+'\n'+p.stderr,'utf-8')
    if p.returncode:raise RuntimeError(f'{company}: {args[0]} failed. Review private log.')
@@ -46,7 +47,7 @@ def deploy(states):
   for start in range(0,len(items),75):
    payload=text({'action':'seed','items':items[start:start+75]});now=int(time.time()*1000);nonce=secrets.token_hex(32);message=f'staff-request|{state["cluster"]}|staff|{now}|{nonce}|{payload}'
    envelope={'key':state['public'],'time':now,'nonce':nonce,'payload':payload,'signature':b64(key.sign(message.encode(),ec.ECDSA(hashes.SHA256())))}
-   request=urllib.request.Request(network['coordinator']+'/staff',data=text(envelope).encode(),headers={'Content-Type':'application/json','Authorization':'Bearer '+network['networkKey'],'User-Agent':'Colbert-Staff-Setup'})
+   request=urllib.request.Request(network['coordinator']+'/staff?request='+secrets.token_hex(16),data=text(envelope).encode(),headers={'Content-Type':'application/json','Authorization':'Bearer '+network['networkKey'],'User-Agent':'Colbert-Staff-Setup','Cache-Control':'no-store'})
    with urllib.request.urlopen(request,timeout=30) as response:reply=json.load(response)
    if not reply.get('ok'):raise RuntimeError(company+': seed registration rejected')
   print(company+': authority deployed; existing worker plants registered; master remains unclaimed.')

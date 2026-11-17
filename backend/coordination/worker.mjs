@@ -54,13 +54,12 @@ export default {
     if (!env.NETWORK_KEY || a.length !== b.length || !crypto.subtle.timingSafeEqual(a, b)) return new Response('Unauthorized', {status: 401});
     const body = await request.text();
     if (body.length > 24000) return new Response('Too large', {status: 413});
-    let stage='parse';try {
+    try {
       const input = JSON.parse(body);
       // Validate before creating or accessing the single installation object.
-      stage='policy';if(url.pathname==='/staff')policy(env);
+      if(url.pathname==='/staff')policy(env);
       else if(!input.staff){if(url.pathname==='/lease')transition(undefined,input,Date.now());else validateWallet(input);}
-      stage='storage';
       return await env.LEADER.get(env.LEADER.idFromName('comedor')).fetch(new Request('https://internal'+url.pathname, {method: 'POST', body}));
-    } catch(e) { console.warn('coordinator_rejected',stage,e.name,e.message);return new Response('Invalid request', {status: 400}); }
+    } catch { return new Response('Invalid request', {status: 400}); }
   }
 };

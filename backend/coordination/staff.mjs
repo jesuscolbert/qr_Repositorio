@@ -116,7 +116,8 @@ export async function authorizeWallet(tx,r,user,env,now){
   const body=await rosterBody(r.roster),proof=body.staff;require(proof,'El maestro debe sincronizar este trabajador anterior.');delete body.staff;
   const [grantData,grantSig]=proof.certificate.slice(5).split('.');require(proof.certificate.startsWith('CSA1:')&&await verify(policy(env).authority,'CSA1:'+grantData,grantSig),'Alta sin permiso individual.');const grant=JSON.parse(dec.decode(un64(grantData)));
   require(grant.cluster===policy(env).cluster&&grant.kind==='grant'&&grant.active&&grant.issued<=body.time+120000&&body.time<=now+120000);permission(grant,'worker',body.plant);
-  require(await verify(grant.key,'staff-event|'+grant.cluster+'|roster|'+JSON.stringify(body),proof.signature),'Alta alterada.');
+  const payload=proof.payload??JSON.stringify(body);require(typeof payload==='string'&&payload.length<=8192&&JSON.stringify(JSON.parse(payload))===JSON.stringify(body),'Contenido del alta alterado.');
+  require(await verify(grant.key,'staff-event|'+grant.cluster+'|roster|'+payload,proof.signature),'Alta alterada.');
   require(typeof body.ci==='string'&&/^[0-9]{5,20}(?:-[A-Z0-9]{1,6})?$/.test(body.ci));
   const id=policy(env).personPrefix+body.ci,key=await crypto.subtle.importKey('raw',enc.encode(env.NETWORK_KEY),{name:'HMAC',hash:'SHA-256'},false,['sign']);
   const tag=Array.from(new Uint8Array(await crypto.subtle.sign('HMAC',key,enc.encode(grant.cluster+'|wallet-person|'+id))),b=>b.toString(16).padStart(2,'0')).join('');require(tag===r.tag,'Trabajador incompatible.');plant=body.plant;await tx.put('staffSubject:'+r.tag,plant);

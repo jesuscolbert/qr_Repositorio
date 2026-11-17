@@ -72,6 +72,17 @@ public class StaffTest {
   JSONObject reply=PeerCards.request(db,config,fixture.worker("Planta Sur").put("document","000112233").put("name",name),now);assertTrue(reply.optBoolean("ok"));String qr=reply.getString("qr");assertTrue(qr.startsWith("SB5:"));assertTrue(qr.length()<2300);assertTrue(QrPrintDocument.matrix(qr).getWidth()>0);assertEquals(name,PeerCards.resolve(db,config,qr,now).getString("nombre"));
   try{RosterLedger.unpack(RosterLedger.pack("x".repeat(9000)));fail("Oversized credential accepted");}catch(java.io.IOException expected){}
  }
+ JSONObject rpc(JSONObject request,boolean withAccount)throws Exception {long time=System.currentTimeMillis();String nonce=PeerConfig.random(),payload=request.toString();JSONObject result=new JSONObject().put("epoch",1).put("time",time).put("nonce",nonce).put("payload",payload).put("signature",config.mac("rpc|1|"+time+"|"+nonce+"|"+payload));if(withAccount)result.put("staff",auth.networkProof("p2p",request));return result;}
+ @Test public void peerHttpRequiresIndividualAccountAndCannotPromoteAnOperator()throws Exception{
+  authorize("encargado",true,"Planta Norte");PeerEngine engine=new PeerEngine(fixture.context,config);PeerDatabaseTest client=new PeerDatabaseTest();
+  try{client.elect(new PeerEngine[]{engine},0,1);engine.start();JSONObject status=new JSONObject().put("method","status").put("protocol",8);
+   try{client.localSharedHttp(rpc(status,false));fail("Shared key alone was accepted");}catch(java.io.IOException expected){}
+   JSONObject request=rpc(status,true),response=client.localSharedHttp(request);assertEquals(8,new JSONObject(response.getString("payload")).getInt("protocol"));assertEquals(8,auth.authenticate(response.getJSONObject("staff"),"reply:"+request.getString("nonce")).getInt("protocol"));
+   try{client.localSharedHttp(request);fail("Replay accepted");}catch(java.io.IOException expected){}
+   JSONObject forbidden=new JSONObject().put("method","scan").put("protocol",8).put("request",scan(south,"almuerzo","Planta Sur")).put("operator",new JSONObject().put("name","Intruso").put("role","admin"));
+   JSONObject denied=client.localSharedHttp(rpc(forbidden,true));assertFalse(new JSONObject(denied.getString("payload")).optBoolean("ok"));assertEquals(1,new OfflineLedger(db,config).records().size());
+  }finally{engine.close();engine.db.close();}
+ }
  @Test public void masterMenuAndOperatorMenuAreDifferentOnTheSameApk()throws Exception{
   authorize("master",true,"Planta Norte","Planta Sur");android.app.Instrumentation i=InstrumentationRegistry.getInstrumentation();StaffActivity activity=(StaffActivity)i.startActivitySync(new android.content.Intent(fixture.context,StaffActivity.class).putExtra("company","soboce").putExtra("manage",true).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));PeerDatabaseTest ui=new PeerDatabaseTest();try{ui.waitText(activity,"Encargados y permisos");ui.screenshot("30-maestro-cuentas");}finally{i.runOnMainSync(activity::finish);}
   authorize("encargado",true,"Planta Norte");StaffActivity operator=(StaffActivity)i.startActivitySync(new android.content.Intent(fixture.context,StaffActivity.class).putExtra("company","soboce").putExtra("manage",true).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));try{ui.waitText(operator,"Mi cuenta");ui.screenshot("31-encargado-cuenta");}finally{i.runOnMainSync(operator::finish);}

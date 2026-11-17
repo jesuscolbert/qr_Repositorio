@@ -8,8 +8,13 @@ def main():
     target.mkdir(parents=True,exist_ok=True)
     for attempt in range(3):
         result=subprocess.run(['adb','exec-out','tar','-C','/sdcard/Download','-cf','-',name],capture_output=True,timeout=60)
-        if result.returncode==0:break
-        print('Emulator copy retry:',result.stderr.decode(errors='replace')[-1000:],flush=True)
+        if result.returncode==0 and 0<len(result.stdout)<64*1024*1024:
+            try:
+                # ADB can return success while its binary stream is truncated.
+                with tarfile.open(fileobj=io.BytesIO(result.stdout),mode='r:') as check:check.getmembers()
+                break
+            except (tarfile.TarError,EOFError):pass
+        print('Emulator copy retry: incomplete archive.',flush=True)
         time.sleep(1)
     assert result.returncode==0,'Could not retrieve emulator verification files'
     assert 0<len(result.stdout)<64*1024*1024

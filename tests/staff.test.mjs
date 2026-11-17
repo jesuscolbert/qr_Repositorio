@@ -92,9 +92,10 @@ test('coordinator wallet uses signed plant and account identity and survives a t
 });
 test('new worker proof binds its registered plant and rejects a modified registration',async()=>{
  const s=await setup(),creator=await enroll(s,'admin',['Norte','Sur']),operator=await enroll(s),ci='12345678';
- const roster={v:4,cluster,origin:creator.k.device,seq:1,time:now,operator:{name:creator.user.name},ci,name:'Persona de prueba',plant:'Norte'};
- const signature=b64(rawToDer(new Uint8Array(await crypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},creator.k.pair.privateKey,enc.encode('staff-event|'+cluster+'|roster|'+JSON.stringify(roster))))));
- const signed={...roster,staff:{certificate:creator.cert,signature}};
+ const roster={v:4,cluster,origin:creator.k.device,seq:1,time:now,operator:{name:creator.user.name},ci,name:'Persona / de prueba',plant:'Norte'};
+ const payload=JSON.stringify(roster).replaceAll('/','\\/');
+ const signature=b64(rawToDer(new Uint8Array(await crypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},creator.k.pair.privateKey,enc.encode('staff-event|'+cluster+'|roster|'+payload)))));
+ const signed={...roster,staff:{certificate:creator.cert,payload,signature}};
  const key=await crypto.subtle.importKey('raw',enc.encode(s.env.NETWORK_KEY),{name:'HMAC',hash:'SHA-256'},false,['sign']);
  const bytes=await crypto.subtle.sign('HMAC',key,enc.encode(cluster+'|wallet-person|CI-'+ci));const tag=Buffer.from(bytes).toString('hex');
  const r={action:'bind',tag,plant:'Norte',roster:'SB4:'+b64(enc.encode(JSON.stringify({...signed,plant:'Sur'})))+'.unused'};
