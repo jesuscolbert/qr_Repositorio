@@ -62,7 +62,9 @@ import ComedorCore
   }
   guard c.permitted else{throw ComedorError("El permiso venció. Compruébalo en Licencia.")}
   c.pending=["request":request,"operator":op,"epoch":.num(c.epoch)];try store(c)
-  do{let reply=try await transport.control(c.profile,["action":"scan","request":request,"operator":op,"epoch":.num(c.epoch)]);return try settle(&c,reply:reply)}catch{message="Entrega sin confirmar. No entregues otra ración hasta comprobarla.";throw ComedorError(message)}
+  let reply:J
+  do{reply=try await transport.control(c.profile,["action":"scan","request":request,"operator":op,"epoch":.num(c.epoch)])}catch{message="Entrega sin confirmar. No entregues otra ración hasta comprobarla.";throw ComedorError(message)}
+  return try settle(&c,reply:reply)
  }
  func settle(_ c:inout CompanyState,reply:J)throws->J{
   let status=reply["status"].s
