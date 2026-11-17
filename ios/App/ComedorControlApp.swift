@@ -21,11 +21,25 @@ struct RootView:View {
     if let c=model.company{let warning=License.warning(c.license,config:c.profile.license);if !warning.isEmpty{Label(warning,systemImage:"clock").font(.footnote).padding(12).background(Color.orange.opacity(0.12),in:RoundedRectangle(cornerRadius:14))}}
     controls
    }
-  }.padding(22)}.background(Style.paper).toolbar{ToolbarItem(placement:.navigationBarLeading){Text("COLBERT / COMEDOR").font(.caption.weight(.bold)).foregroundStyle(Style.teal)};ToolbarItem(placement:.navigationBarTrailing){Menu{ForEach(Screen.allCases,id:\.self){item in Button{screen=item}label:{Label(item.rawValue,systemImage:item.icon)}};Divider();Button{activation=true}label:{Label("Agregar empresa",systemImage:"plus.circle")};Button{model.lock()}label:{Label("Bloquear pantalla",systemImage:"lock")}}label:{Image(systemName:"line.3.horizontal").font(.title2).frame(width:44,height:44).contentShape(Rectangle())}.accessibilityLabel("Menú principal").accessibilityIdentifier("mainMenu")}}
+  }.padding(22)}.background(Style.paper).toolbar(.hidden,for:.navigationBar).safeAreaInset(edge:.top){topBar}
    .sheet(isPresented:$activation){ActivationView()}
    .task{while !Task.isCancelled{if phase == .active && model.unlocked && screen != .scan{await model.synchronize()};try? await Task.sleep(nanoseconds:30_000_000_000);if Task.isCancelled{break}}}
   }}
  }.overlay{if phase != .active{Style.navy.ignoresSafeArea().overlay{Label("Comedor · contenido protegido",systemImage:"lock.fill").foregroundStyle(.white)}}}}
+ var topBar:some View{
+  HStack {
+   Text("COLBERT / COMEDOR").font(.caption.weight(.bold)).foregroundStyle(Style.teal)
+   Spacer()
+   Menu {
+    ForEach(Screen.allCases,id:\.self){item in Button{screen=item}label:{Label(item.rawValue,systemImage:item.icon)}}
+    Divider()
+    Button{activation=true}label:{Label("Agregar empresa",systemImage:"plus.circle")}
+    Button{model.lock()}label:{Label("Bloquear pantalla",systemImage:"lock")}
+   } label: {
+    Label("Menú",systemImage:"line.3.horizontal").font(.subheadline.bold()).frame(minHeight:44).padding(.horizontal,12).background(Color.white,in:Capsule())
+   }.accessibilityLabel("Menú principal").accessibilityIdentifier("mainMenu")
+  }.padding(.horizontal,22).padding(.vertical,6).background(Style.paper)
+ }
  @ViewBuilder var controls:some View{
   if model.company?.permitted != true && screen != .network && screen != .license{license}
   else{switch screen{case .home:home;case .scan:ScanPanel();case .workers:WorkersPanel();case .visitors:VisitorPanel();case .reports:ReportsPanel();case .network:network;case .license:license}}
