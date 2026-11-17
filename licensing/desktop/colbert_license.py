@@ -149,7 +149,7 @@ class LicenseClient:
         problem = None
         try:
             state = self._load()
-            due = not self.allowed() or time.monotonic() - state.get('monotonic', 0) >= 60
+            due = not self.allowed() or abs(time.time()-time.monotonic()-state.get('bootEstimate',0)) >= 120 or time.monotonic() - state.get('monotonic', 0) >= 60
             if due:
                 self.refresh()
         except urllib.error.HTTPError as exc:

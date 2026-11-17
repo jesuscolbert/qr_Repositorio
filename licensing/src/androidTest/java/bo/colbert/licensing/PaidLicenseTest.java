@@ -16,7 +16,7 @@ public class PaidLicenseTest {
    for(String name:names)vault.put(name,"");long wall=System.currentTimeMillis();JSONObject config=new JSONObject().put("version",1).put("url","https://127.0.0.1:1").put("token",LicenseProtocol.random()).put("contractId","client").put("productId","app");
    KeyPairGenerator g=KeyPairGenerator.getInstance("EC");g.initialize(new ECGenParameterSpec("secp256r1"));KeyPair keys=g.generateKeyPair();JSONObject c=claims().put("issuedAt",wall-15*day).put("paidUntil",wall+15*day).put("expiresAt",wall+15*day);JSONObject envelope=LicenseProtocol.sign(c,keys.getPrivate(),keys.getPublic());
    vault.put("serverKey",envelope.getString("publicKey"));vault.put("permit",new JSONObject().put("envelope",envelope).put("boot",-123).put("elapsed",1000).put("wall",wall-15*day).toString());
-   assertTrue(new LicenseClient(context,true,"app",config,namespace).allowed());assertTrue(new LicenseClient(context,true,"app",config,namespace).allowed());
+   LicenseClient reopened=new LicenseClient(context,true,"app",config,namespace);assertTrue(reopened.allowed());assertTrue(reopened.refreshDue());assertTrue(new LicenseClient(context,true,"app",config,namespace).allowed());
    c.put("allowed",false).put("grantKind","denied").put("expiresAt",c.getLong("issuedAt"));vault.put("permit",new JSONObject().put("envelope",LicenseProtocol.sign(c,keys.getPrivate(),keys.getPublic())).put("boot",-123).put("elapsed",1000).put("wall",wall-15*day).toString());assertFalse(new LicenseClient(context,true,"app",config,namespace).allowed());
   }finally{for(String name:names)vault.put(name,"");}
  }

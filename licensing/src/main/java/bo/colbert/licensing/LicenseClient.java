@@ -58,7 +58,7 @@ public final class LicenseClient {
  }
  public synchronized String renewalNotice(){try{if(!allowed())return "";JSONObject cache=new JSONObject(vault.get("permit")),claims=details();return LicenseClock.renewalNotice(claims,trustedTime(claims,cache));}catch(Exception e){return "";}}
  public synchronized JSONObject details(){try{String s=vault.get("permit");return s.isEmpty()?new JSONObject():new JSONObject(new JSONObject(s).getJSONObject("envelope").getString("claims"));}catch(Exception e){return new JSONObject();}}
- public synchronized boolean refreshDue(){try{JSONObject p=new JSONObject(vault.get("permit"));return !allowed()||SystemClock.elapsedRealtime()-p.getLong("elapsed")>60000;}catch(Exception e){return true;}}
+ public synchronized boolean refreshDue(){try{JSONObject p=new JSONObject(vault.get("permit"));return !allowed()||p.optInt("boot",-2)!=boot()||SystemClock.elapsedRealtime()-p.getLong("elapsed")>60000;}catch(Exception e){return true;}}
  public JSONObject refresh()throws Exception {
   if(config==null)throw new IOException("Falta configurar la licencia.");String nonce=LicenseProtocol.random();long sent=SystemClock.elapsedRealtime(),wall=System.currentTimeMillis();int sentBoot=boot();
   JSONObject reply=post("/v1/status",new JSONObject().put("nonce",nonce).put("permitVersion",2));

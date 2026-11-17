@@ -22,7 +22,7 @@ public final class LicenseActivity extends Activity {
  interface Work{void run()throws Exception;}
  private void execute(Work work,Runnable done,boolean loud){if(busy||isFinishing()||isDestroyed())return;busy=true;worker.execute(()->{String error=null;try{work.run();}catch(Exception e){error=e.getMessage()==null?"No se pudo contactar al servidor.":e.getMessage();}String message=error;runOnUiThread(()->{busy=false;if(isFinishing()||isDestroyed())return;if(message==null)done.run();else if(loud){if(client.pending()!=null)render();ui.error(message);}timer.removeCallbacks(poll);if(hasWindowFocus())timer.postDelayed(poll,15000);});});}
  private void refresh(boolean loud){execute(()->client.refresh(),()->{if(client.allowed()&&getIntent().getBooleanExtra("automatic",false)){setResult(RESULT_OK);finish();}else if(!state(client.details()).equals(shownState))render();},loud);}
- String state(JSONObject d){return d.optString("reason")+d.optLong("paidUntil")+d.optInt("version")+d.optString("invoice")+d.optString("receipts");}
+ String state(JSONObject d){JSONObject invoice=d.optJSONObject("invoice");String fixed="";if(invoice!=null)fixed=invoice.optString("id")+invoice.optLong("amountMinor")+invoice.optString("interval")+invoice.optString("note")+invoice.optString("paymentQr");return d.optString("reason")+d.optLong("paidUntil")+d.optInt("version")+fixed+d.optString("receipts");}
  void render(){
   JSONObject d=client.details();shownState=state(d);boolean usable=client.allowed();ui.screen(client.productName(),"Acceso por cliente y aplicación · todos sus equipos");
   if(usable){ui.banner("Acceso activo","Período pagado: "+LicenseUi.when(d.optLong("paidUntil")),LicenseUi.GREEN);ui.button("Volver a la aplicación",LicenseUi.BLUE,this::finish);}
