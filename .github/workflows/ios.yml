@@ -45,5 +45,7 @@ jobs:
         if: success() && hashFiles('ios/project.yml') != ''
         with:
           name: Colbert-Control-iOS-sin-firma
-          path: ios/build/Colbert-Control-iOS-SIN-FIRMA.ipa
+          path: |
+            ios/build/Colbert-Control-iOS-SIN-FIRMA.ipa
+            ios/build/Colbert-Control-iOS-Simulador.zip
           if-no-files-found: error

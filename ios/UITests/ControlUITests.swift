@@ -1,0 +1,5 @@
+import XCTest
+final class ControlUITests:XCTestCase {
+ func capture(_ name:String){let a=XCTAttachment(screenshot:XCUIScreen.main.screenshot());a.name=name;a.lifetime = .keepAlways;add(a)}
+ func testEncargadoNavigationAndDuplicateWarning(){let app=XCUIApplication();app.launchArguments=["--demo"];app.launch();XCTAssertTrue(app.buttons["startScan"].waitForExistence(timeout:10));capture("01-inicio");app.buttons["startScan"].tap();app.swipeUp();let demo=app.buttons["demoScan"];XCTAssertTrue(demo.waitForExistence(timeout:5));demo.tap();XCTAssertTrue(app.staticTexts["ACCESO PERMITIDO"].waitForExistence(timeout:5));capture("02-permitido");sleep(3);demo.tap();XCTAssertTrue(app.staticTexts["YA RECIBIÓ SU COMIDA"].waitForExistence(timeout:5));capture("03-duplicado");app.buttons["mainMenu"].tap();app.buttons["Reportes"].tap();XCTAssertTrue(app.buttons["exportExcel"].waitForExistence(timeout:5));capture("04-reportes");app.buttons["mainMenu"].tap();app.buttons["Trabajadores"].tap();XCTAssertTrue(app.buttons["Nuevo trabajador"].waitForExistence(timeout:5));capture("05-trabajadores")}
+}

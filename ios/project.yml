@@ -1,0 +1,61 @@
+name: ComedorControl
+options:
+  bundleIdPrefix: bo.colbert
+  deploymentTarget:
+    iOS: '16.0'
+  developmentLanguage: es
+settings:
+  base:
+    SWIFT_VERSION: '5.9'
+    TARGETED_DEVICE_FAMILY: '1'
+    CODE_SIGN_STYLE: Automatic
+    MARKETING_VERSION: 1.0.0
+    CURRENT_PROJECT_VERSION: 1
+packages:
+  ComedorCore:
+    path: .
+targets:
+  ComedorControl:
+    type: application
+    platform: iOS
+    sources:
+      - App
+    dependencies:
+      - package: ComedorCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: bo.colbert.comedor.control
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SUPPORTS_MACCATALYST: NO
+        SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Colbert Comedor
+        LSRequiresIPhoneOS: true
+        NSCameraUsageDescription: Escanear credenciales QR, registrar comidas y vincular trabajadores.
+        NSFaceIDUsageDescription: Proteger el acceso del encargado a los datos del comedor.
+        ITSAppUsesNonExemptEncryption: false
+        UIApplicationSupportsIndirectInputEvents: true
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+  ComedorUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: UITests
+    dependencies:
+      - target: ComedorControl
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: bo.colbert.comedor.control.uitests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  ComedorControl:
+    build:
+      targets:
+        ComedorControl: all
+        ComedorUITests: [test]
+    test:
+      targets: [ComedorUITests]
+      gatherCoverageData: true

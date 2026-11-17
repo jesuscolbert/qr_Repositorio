@@ -1,6 +1,6 @@
 """Publish only reviewed source files using the user's authenticated GitHub CLI."""
 from pathlib import Path
-import json, subprocess, os, sys, urllib.request, urllib.error
+import json, subprocess, os, sys, urllib.request, urllib.error, base64
 
 ROOT=Path(__file__).resolve().parents[1]
 GH=ROOT/'.tools/gh/bin/gh.exe'
@@ -41,7 +41,13 @@ def main():
     tree=api(f'/repos/{REPO}/git/commits/{head}')['tree']['sha']
     paths=[ROOT/p for p in ['.gitignore','settings.gradle','build.gradle','gradle.properties','README.md','.github/workflows/android.yml','.github/workflows/desktop.yml','.github/workflows/ios.yml','scripts/package_desktop.py','scripts/import_roster.py','scripts/package_setup.py','scripts/publish_github.py','scripts/build_cloudflared.sh','scripts/provision_peers.py','scripts/package_installers.py','scripts/package_universal.py','scripts/provision_shared.py','scripts/provision_billing.py','scripts/package_licensed.py','scripts/import_frigor.py','scripts/provision_frigor.py','scripts/package_frigor.py','scripts/package_billing_update.py','scripts/package_soboce_update.py','scripts/package_companies.py']]
     paths += [p for folder in ['app','billing','licensing','credential','worker','backend','desktop','tests','ios'] for p in (ROOT/folder).rglob('*') if p.is_file() and not {'build','jniLibs','__pycache__','.wrangler','private','outputs','.tools','.build','.swiftpm','DerivedData'}.intersection(p.relative_to(ROOT).parts) and p.name != 'cloudflared-LICENSE.txt']
-    entries=[{'path':p.relative_to(ROOT).as_posix(),'mode':'100644','type':'blob','content':p.read_text(encoding='utf-8')} for p in paths]
+    entries=[]
+    for p in paths:
+        entry={'path':p.relative_to(ROOT).as_posix(),'mode':'100644','type':'blob'}
+        if p.suffix.lower()=='.png' and 'Assets.xcassets' in p.parts:
+            entry['sha']=api(f'/repos/{REPO}/git/blobs','POST',{'content':base64.b64encode(p.read_bytes()).decode('ascii'),'encoding':'base64'})['sha']
+        else:entry['content']=p.read_text(encoding='utf-8')
+        entries.append(entry)
     # The Git Trees API does not apply .gitignore. Exclude private folders at every
     # depth and remove any previously published generated files from those folders.
     tracked=api(f'/repos/{REPO}/git/trees/{tree}?recursive=1')
