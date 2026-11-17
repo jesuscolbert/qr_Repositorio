@@ -50,7 +50,7 @@ jobs:
                   raise SystemExit('Falta configurar la firma estable en GitHub Secrets.')
               (target / name).write_bytes(base64.b64decode(value, validate=True))
           PY
-      - run: node --test tests/backend.test.cjs tests/lease.test.mjs tests/wallet.test.mjs
+      - run: node --test tests/backend.test.cjs tests/lease.test.mjs tests/wallet.test.mjs tests/staff.test.mjs
       - name: Probar cliente de licencias para escritorio
         run: |
           python3 -m pip install cryptography openpyxl zxing-cpp==3.0.0 Pillow

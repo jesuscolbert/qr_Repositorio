@@ -56,7 +56,7 @@ final class Companies {
             Vault vault=new Vault(c,id);SharedSetup.apply(vault,item(c,id).getJSONObject("network").toString());
             // This private multi-company installer explicitly authorizes all plants of each company.
             JSONObject config=new JSONObject(vault.get("peerConfig"));
-            if(!config.getJSONObject("operator").getString("role").equals("admin")){
+            if(!config.has("staffAuthority")&&!config.getJSONObject("operator").getString("role").equals("admin")){
                 PeerConfig.require(!PeerService.running,"Cierra y vuelve a abrir la app para habilitar todas las plantas.");
                 config.getJSONObject("operator").put("role","admin");new PeerConfig(config.toString());vault.put("peerConfig",config.toString());
             }

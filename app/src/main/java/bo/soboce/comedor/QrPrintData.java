@@ -9,11 +9,11 @@ final class QrPrintData {
     static void requirePermission(LicenseClient client){PeerConfig.require(client.allowed(),"El permiso de esta empresa está pausado. Abre Licencia y pagos para generar las credenciales.");}
     static List<String> plants(PeerConfig config)throws Exception {
         JSONObject op=config.operator(-1);List<String> result=new ArrayList<>();JSONArray all=config.seed.getJSONArray("plants");
-        for(int i=0;i<all.length();i++)if(op.getString("role").equals("admin")||op.getString("plant").equals(all.getString(i)))result.add(all.getString(i));
+        for(int i=0;i<all.length();i++)if(StaffProtocol.plant(op,all.getString(i)))result.add(all.getString(i));
         return result;
     }
     static List<QrPrintDocument.Group> snapshot(PeerDatabase db,PeerConfig config,LicenseClient client,String selected,long now)throws Exception {
-        requirePermission(client);PeerConfig.require(config.shared,"La impresión por lotes requiere la red de teléfonos actualizada.");
+        requirePermission(client);if(config.staff!=null)config.staff.require("issue",selected);PeerConfig.require(config.shared,"La impresión por lotes requiere la red de teléfonos actualizada.");
         List<String> allowed=plants(config);PeerConfig.require(selected.isEmpty()||allowed.contains(selected),"Planta no autorizada.");
         Collator col=Collator.getInstance(new Locale("es","BO"));col.setStrength(Collator.PRIMARY);
         List<JSONObject> people=new ArrayList<>(db.rows("people"));people.sort((a,b)->{int c=col.compare(a.optString("nombre"),b.optString("nombre"));return c!=0?c:a.optString("id").compareTo(b.optString("id"));});

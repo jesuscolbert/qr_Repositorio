@@ -7,6 +7,7 @@ def company_catalog():
     for identity,source in [('soboce','private/shared-network/bundle.json'),('frigor','private/frigor/network/bundle.json')]:
         network=json.loads((ROOT/source).read_text(encoding='utf-8'))
         license=json.loads((ROOT/f'private/billing-network/client-{identity}.json').read_text(encoding='utf-8'))
+        assert network.get('staffAuthority'), 'Run provision_staff.py before packaging 1.15'
         assert network['format']=='SOBOCE-SHARED-BUNDLE-1' and network['url'].endswith('.colbert2027.shop')
         assert license['productId']==identity+'-comedor' and license['contractId']==identity+'-comedor'
         assert license['url']=='https://licencias.colbert2027.shop'

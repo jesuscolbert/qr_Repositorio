@@ -22,7 +22,7 @@ public final class QrPrintActivity extends Activity {
         try{
             company=state==null?getIntent().getStringExtra("company"):state.getString("company");
             if(company==null)company=Companies.current(this);
-            config=new PeerConfig(new Vault(this,company).get("peerConfig"));
+            config=new PeerConfig(new Vault(this,company).get("peerConfig"));StaffAccess auth=StaffAccess.attach(this,config);if(auth!=null)auth.require("issue","");
             PeerConfig.require(Companies.company(this,config).equals(company),"La red pertenece a otra empresa.");
             license=Companies.enabled(this)?Companies.license(this,company):LicenseClient.get(this);plants=QrPrintData.plants(config);
             render(state);
@@ -49,7 +49,7 @@ public final class QrPrintActivity extends Activity {
     private File directory(){return new File(getCacheDir(),"qr-print");}
     private String options(){return plant.getSelectedItemPosition()+":"+paper.getSelectedItemPosition()+":"+size.getSelectedItemPosition();}
     private void updateSummary(){QrPrintDocument.Layout layout=new QrPrintDocument.Layout((QrPrintDocument.Paper)paper.getSelectedItem(),size.getSelectedItemPosition()==1?8:7);summary.setText(layout.perPage+" QR por hoja · "+layout.columns+" columnas × "+layout.rows+" filas\nCada planta comienza en una página nueva.");}
-    private boolean allowed(){if(license.allowed())return true;error("El permiso de "+company.toUpperCase(Locale.ROOT)+" está pausado. Vuelve a Licencia y pagos para renovarlo.");return false;}
+    private boolean allowed(){try{if(config.staff!=null)config.staff.require("issue","");}catch(Exception e){error(e.getMessage());return false;}if(license.allowed())return true;error("El permiso de "+company.toUpperCase(Locale.ROOT)+" está pausado. Vuelve a Licencia y pagos para renovarlo.");return false;}
     private void error(String message){if(!isFinishing()&&!isDestroyed())new AlertDialog.Builder(this).setTitle("Imprimir credenciales").setMessage(message).setPositiveButton("Entendido",null).show();}
     private void generate(){
         if(!allowed())return;String selected=plant.getSelectedItemPosition()==0?"":plants.get(plant.getSelectedItemPosition()-1);

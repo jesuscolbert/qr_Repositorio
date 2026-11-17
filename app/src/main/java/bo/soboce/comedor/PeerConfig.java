@@ -16,6 +16,8 @@ final class PeerConfig {
     final PrivateKey identity;
     final boolean shared;
     final String device;
+    StaffAccess staff;
+    private boolean constructing=true;
     PeerConfig(String text) throws Exception {
         raw = new JSONObject(text);
         shared=raw.optString("format").equals("SOBOCE-SHARED-1");
@@ -46,9 +48,12 @@ final class PeerConfig {
         JSONObject tunnel=raw.getJSONObject("tunnel");
         require(tunnel.getString("TunnelID").matches("[a-f0-9-]{36}") && !tunnel.getString("TunnelSecret").isEmpty(), "Falta la credencial de túnel de este teléfono.");
         require(!tunnel.getString("AccountTag").isEmpty(), "Falta la cuenta del túnel.");
+        if(StaffAccess.enabled(this))bo.colbert.credential.WalletProtocol.publicKey(raw.getString("staffAuthority"));
+        constructing=false;
     }
     JSONObject operator(int actor) throws Exception {
         if(actor>=0)return nodes.getJSONObject(actor);
+        if(!constructing&&StaffAccess.enabled(this)){require(staff!=null,"Desbloquea tu cuenta autorizada.");return staff.operator();}
         require(shared,"Encargado inválido.");JSONObject op=raw.getJSONObject("operator");
         require(op.getString("name").length()>=3 && op.getString("name").length()<=100,"Nombre inválido.");
         require(op.getString("role").equals("encargado")||op.getString("role").equals("admin"),"Rol inválido.");

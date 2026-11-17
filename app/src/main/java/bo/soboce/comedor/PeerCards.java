@@ -14,6 +14,7 @@ final class PeerCards {
     static JSONObject request(PeerDatabase db,PeerConfig config,JSONObject request,long now) throws Exception {
         try {
             String action=request.getString("action");
+            if(config.staff!=null)config.staff.require(action,request.optString("plant"));
             if(action.equals("worker"))return new RosterLedger(db,config).add(request,now);
             if(!action.equals("issue")&&!action.equals("visitor"))return new MealLedger(db,config).read(request);
             synchronized(db){return issue(db,config,request,now);}
@@ -25,7 +26,7 @@ final class PeerCards {
     private static void issuerPlant(PeerConfig config,int issuer,String plant) throws Exception {
         PeerConfig.require((issuer>=0&&issuer<4||issuer==-1&&config.shared)&&knownPlant(config,plant),"Planta o encargado inválidos.");
         JSONObject op=config.operator(issuer);
-        PeerConfig.require(op.getString("role").equals("admin")||op.getString("plant").equals(plant),"Solo puedes emitir tarjetas de tu planta.");
+        PeerConfig.require(StaffProtocol.plant(op,plant),"Solo puedes emitir tarjetas de tu planta.");
     }
     private static JSONObject issue(PeerDatabase db,PeerConfig config,JSONObject r,long now) throws Exception {
         String plant=r.optString("plant"),name,detail;issuerPlant(config,config.shared?-1:config.node,plant);
@@ -69,7 +70,7 @@ final class PeerCards {
             String signature=Base64.getEncoder().encodeToString(Base64.getUrlDecoder().decode(parts[1]));
             if(qr.startsWith("SB3:")){
                 PeerConfig.require(config.shared && card.getInt("v")==3 && config.cluster.equals(card.getString("cluster")) && PeerConfig.equal(config.mac("card|"+body),new String(Base64.getUrlDecoder().decode(parts[1]),StandardCharsets.US_ASCII)),"QR alterado o de otra red.");
-                JSONObject op=card.getJSONObject("operator");PeerConfig.require(knownPlant(config,card.getString("plant")) && (op.optString("role").equals("admin") || op.optString("plant").equals(card.getString("plant"))),"Planta no autorizada.");
+                JSONObject op=card.getJSONObject("operator");PeerConfig.require(knownPlant(config,card.getString("plant")) && StaffProtocol.plant(op,card.getString("plant")),"Planta no autorizada.");
             }else {PeerConfig.require(card.getInt("v")==2&&config.cluster.equals(card.getString("cluster"))&&config.verify(card.getInt("issuer"),"card|"+config.cluster+"|"+body,signature),"QR alterado o de otra red.");
                 issuerPlant(config,card.getInt("issuer"),card.getString("plant"));
             }

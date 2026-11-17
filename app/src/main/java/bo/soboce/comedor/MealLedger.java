@@ -28,17 +28,17 @@ final class MealLedger {
         boolean all=config.shared && r.optBoolean("allPlants") && Arrays.asList("today","report","conflicts").contains(action);
         JSONArray plants=config.seed.getJSONArray("plants");
         if(action.equals("session")){
-            JSONArray allowed=new JSONArray();for(int i=0;i<plants.length();i++)if(admin||plants.getString(i).equals(op.getString("plant")))allowed.put(plants.getString(i));
+            JSONArray allowed=new JSONArray();for(int i=0;i<plants.length();i++)if(StaffProtocol.plant(op,plants.getString(i)))allowed.put(plants.getString(i));
             return ok().put("operator",op.getString("name")).put("role",op.getString("role")).put("today",today).put("plants",allowed).put("p2p",true);
         }
         String plant=r.optString("plant");boolean known=false;for(int i=0;i<plants.length();i++)known|=plants.getString(i).equals(plant);
-        PeerConfig.require(all||known&&(admin||op.getString("plant").equals(plant)),"No tienes permiso para esta planta.");
+        PeerConfig.require(all||known&&StaffProtocol.plant(op,plant),"No tienes permiso para esta planta.");
         if(action.equals("people")){
             JSONArray people=new JSONArray();for(JSONObject p:db.rows("people"))if(p.optBoolean("activo")&&p.getString("planta").equals(plant))people.put(new JSONObject().put("id",p.getString("id")).put("sap",p.optString("sap")).put("documento",p.optString("documento")).put("rosterConflict",p.optBoolean("rosterConflict")).put("nombre",p.getString("nombre")).put("planta",plant).put("tipo",p.getString("tipo")));
             return ok().put("people",people);
         }
         if(action.equals("today")||action.equals("report")||action.equals("conflicts")){
-            return MealReports.build(new OfflineLedger(db,config).records(),r,today,all).put("ratesConfigured",config.seed.optBoolean("ratesConfigured",true)).put("synced",db.applied()).put("pending",config.shared?new SharedLedger(db,config).pending():new OfflineLedger(db,config).pending());
+            List<JSONObject> visible=new OfflineLedger(db,config).records();if(op.has("staffId"))visible.removeIf(row->!StaffProtocol.plant(op,row.optString("planta")));return MealReports.build(visible,r,today,all).put("ratesConfigured",config.seed.optBoolean("ratesConfigured",true)).put("synced",db.applied()).put("pending",config.shared?new SharedLedger(db,config).pending():new OfflineLedger(db,config).pending());
         }
 
         if(action.equals("scan")){
@@ -73,7 +73,7 @@ final class MealLedger {
     JSONObject scanRecord(JSONObject r,JSONObject op,long when) throws Exception {
         String plant=r.optString("plant"),today=day(when);
         boolean known=false;JSONArray plants=config.seed.getJSONArray("plants");for(int i=0;i<plants.length();i++)known|=plants.getString(i).equals(plant);
-        PeerConfig.require(known&&(op.getString("role").equals("admin")||op.getString("plant").equals(plant)),"No tienes permiso para esta planta.");
+        PeerConfig.require(known&&StaffProtocol.plant(op,plant),"No tienes permiso para esta planta.");
             String qr=r.optString("qr"),meal=r.optString("meal");
             PeerConfig.require((qr.matches("SB1:[a-f0-9]{64}")||PeerCards.format(qr))&&MEALS.contains(meal),"QR o comida inválidos.");
             String hash=PeerConfig.hash(qr);JSONObject person=null;
@@ -90,6 +90,7 @@ final class MealLedger {
             PeerConfig.require(rate!=null&&Double.isFinite(rate.optDouble(Meals.allowance(meal)))&&rate.optDouble(Meals.allowance(meal))>=0,"Falta una tarifa válida.");
             String time=time(when);
             JSONObject record=new JSONObject().put("clave",key).put("solicitud",r.getString("requestId")).put("persona",p.getString("id")).put("nombre",p.getString("nombre")).put("fecha",today).put("comida",meal).put("planta",plant).put("operador",op.getString("name")).put("hora",time).put("precio",rate.getDouble(Meals.allowance(meal))).put("centroCosto",p.optString("centroCosto")).put("qrHash",hash);
+            if(op.has("staffId"))record.put("operadorId",op.getString("staffId")).put("cuentaRol",op.getString("staffRole"));
             if(!config.seed.optBoolean("ratesConfigured",true))record.put("precioPendiente",true);
             return record;
     }

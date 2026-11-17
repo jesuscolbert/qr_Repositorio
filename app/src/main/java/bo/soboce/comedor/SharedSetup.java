@@ -24,7 +24,13 @@ final class SharedSetup {
                 for(String field:new String[]{"networkKey","seed","coordinator"})PeerConfig.require(old.raw.getString(field).equals(bundle.getString(field)),"Esta actualización cambia la identidad de la red. Conserva los datos.");
                 for(String field:new String[]{"TunnelID","AccountTag","TunnelSecret"})PeerConfig.require(old.raw.getJSONObject("tunnel").getString(field).equals(bundle.getJSONObject("tunnel").getString(field)),"El túnel incluido pertenece a otra red.");
                 JSONObject migrated=bo.colbert.licensing.EndpointMigration.merge(old.raw,bundle);new PeerConfig(migrated.toString());
-                if(!migrated.getString("url").equals(old.raw.getString("url"))||migrated.optLong("endpointRevision")!=old.raw.optLong("endpointRevision")){
+                boolean staffChange=false;
+                if(bundle.has("staffAuthority")){
+                    PeerConfig.require(!old.raw.has("staffAuthority")||old.raw.getString("staffAuthority").equals(bundle.getString("staffAuthority")),"La autoridad de cuentas cambió. Conserva los datos y contacta a administración.");
+                    staffChange=!old.raw.has("staffAuthority");migrated.put("staffAuthority",bundle.getString("staffAuthority"));
+                    if(bundle.has("staffPeople"))migrated.put("staffPeople",bundle.getJSONObject("staffPeople"));
+                }
+                if(staffChange||!migrated.getString("url").equals(old.raw.getString("url"))||migrated.optLong("endpointRevision")!=old.raw.optLong("endpointRevision")){
                     PeerConfig.require(PeerService.engine==null,"Cierra completamente la app y vuelve a abrirla para actualizar la dirección de la red.");
                     vault.put("peerConfig",migrated.toString());
                 }

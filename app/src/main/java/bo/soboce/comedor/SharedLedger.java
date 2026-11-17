@@ -32,11 +32,13 @@ final class SharedLedger {
             if(now<=0||now<last-60000)return new JSONObject().put("ok",false).put("definitive",false).put("error","Activa fecha y hora automáticas: el reloj retrocedió.");
             JSONObject reply;
             try {
+                if(StaffAccess.enabled(config)){PeerConfig.require(config.staff!=null,"Cuenta no autorizada.");JSONObject proof=request.getJSONObject("staffProof"),base=config.staff.authenticate(proof,"scan"),grant=StaffProtocol.grant(proof.getString("certificate"),config);PeerConfig.require(OfflineLedger.sameRequest(base,request),"Solicitud alterada.");StaffProtocol.require(grant,"scan",request.getString("plant"));operator=StaffProtocol.operator(grant);}
                 validateOperator(operator);
                 JSONObject record=new MealLedger(db,config).scanRecord(request,operator,now),previous=find(record.getString("clave"));
                 if(previous!=null)reply=MealLedger.ok().put("status","duplicate").put("message","Esta comida ya está registrada.").put("person",record.getString("nombre")).put("plant",previous.getString("planta")).put("time",previous.getString("hora"));
                 else {
-                    JSONObject body=new JSONObject().put("kind","shared-meal-v1").put("origin",config.device).put("seq",vector().optLong(config.device)+1).put("time",now).put("operator",operator).put("request",request).put("record",record);
+                    JSONObject body=new JSONObject().put("kind",StaffAccess.enabled(config)?"shared-meal-v2":"shared-meal-v1").put("origin",config.device).put("seq",vector().optLong(config.device)+1).put("time",now).put("operator",operator).put("request",request).put("record",record);
+                    if(StaffAccess.enabled(config)){body.put("staffProof",request.getJSONObject("staffProof"));record.put("equipo",StaffProtocol.grant(request.getJSONObject("staffProof").getString("certificate"),config).getString("device"));}
                     String data=body.toString(),value=new JSONObject().put("body",data).put("signature",config.mac("receipt|"+data)).toString();
                     insert(body,value);reply=accepted(record);db.putMeta("lastSharedTime",Long.toString(Math.max(last,now)));
                 }
@@ -78,13 +80,14 @@ final class SharedLedger {
         }finally{sql.endTransaction();}
     }}
     void validate(JSONObject b) throws Exception {
-        PeerConfig.require(b.getString("kind").equals("shared-meal-v1")&&b.getString("origin").matches("[a-f0-9]{64}")&&b.getLong("seq")>0&&b.getLong("time")>0,"Registro inválido.");
+        PeerConfig.require((b.getString("kind").equals("shared-meal-v1")||b.getString("kind").equals("shared-meal-v2"))&&b.getString("origin").matches("[a-f0-9]{64}")&&b.getLong("seq")>0&&b.getLong("time")>0,"Registro inválido.");
         JSONObject req=b.getJSONObject("request"),r=b.getJSONObject("record"),op=b.getJSONObject("operator");validateOperator(op);
         String meal=req.getString("meal"),plant=req.getString("plant"),qr=req.getString("qr");long when=b.getLong("time");
+        if(b.getString("kind").equals("shared-meal-v2")){JSONObject proof=b.getJSONObject("staffProof"),grant=StaffProtocol.grant(proof.getString("certificate"),config),base=StaffProtocol.verifyProof(proof,"scan",config,when,grant);StaffProtocol.require(grant,"scan",plant);PeerConfig.require(OfflineLedger.sameRequest(base,req)&&grant.getString("id").equals(r.getString("operadorId"))&&grant.getString("name").equals(op.getString("name"))&&StaffProtocol.operator(grant).toString().equals(op.toString()),"Registro de otra cuenta.");}
         PeerConfig.require(req.getString("action").equals("scan")&&req.getString("requestId").matches("[a-f0-9-]{36}")&&req.getString("requestId").equals(r.getString("solicitud")),"Solicitud inválida.");
         PeerConfig.require(Meals.ALL.contains(meal)&&(qr.matches("SB1:[a-f0-9]{64}")||PeerCards.format(qr))&&PeerConfig.hash(qr).equals(r.getString("qrHash")),"Comida o QR inválidos.");
         boolean known=false;JSONArray plants=config.seed.getJSONArray("plants");for(int i=0;i<plants.length();i++)known|=plants.getString(i).equals(plant);
-        PeerConfig.require(known&&(op.getString("role").equals("admin")||op.getString("plant").equals(plant)),"Planta no autorizada.");
+        PeerConfig.require(known&&StaffProtocol.plant(op,plant),"Planta no autorizada.");
         PeerConfig.require(r.getString("fecha").equals(MealLedger.day(when))&&r.getString("hora").equals(MealLedger.time(when))&&r.getString("clave").equals(r.getString("persona")+"|"+MealLedger.day(when)+"|"+Meals.allowance(meal)),"Fecha o persona incompatible.");
         PeerConfig.require(r.getString("planta").equals(plant)&&r.getString("comida").equals(meal)&&r.getString("operador").equals(op.getString("name"))&&Double.isFinite(r.getDouble("precio"))&&r.getDouble("precio")>=0,"Datos inválidos.");
         PeerConfig.require(!r.getString("persona").isEmpty()&&r.getString("persona").length()<=100&&!r.getString("nombre").isEmpty()&&r.getString("nombre").length()<=200&&r.getString("centroCosto").length()<=100,"Persona inválida.");

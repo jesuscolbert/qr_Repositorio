@@ -22,6 +22,7 @@ final class MobileControl {
   return new JSONObject().put("payload",body).put("signature",engine.config.mac("control-reply|"+nonce+"|"+body));
  }
  JSONObject dispatch(JSONObject r,long now,long epoch)throws Exception {
+  PeerConfig.require(!StaffAccess.enabled(engine.config),"La versión para iPhone está deshabilitada. Usa una cuenta autorizada en Android.");
   String action=r.getString("action");PeerConfig c=engine.config;PeerDatabase db=engine.db;
   if(action.equals("bootstrap")){
    JSONArray ids=new JSONArray(),documents=new JSONArray(),keys=new JSONArray();

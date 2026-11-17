@@ -26,8 +26,8 @@ final class RosterLedger {
     }
     JSONObject add(JSONObject request,long now)throws Exception{synchronized(db){
         PeerConfig.require(config.shared,"Actualiza la red de teléfonos para registrar trabajadores.");
-        JSONObject op=config.operator(-1);String plant=request.optString("plant");
-        new SharedLedger(db,config).validateOperator(op);PeerConfig.require(op.getString("role").equals("admin")||op.getString("plant").equals(plant),"Solo puedes registrar en tu planta.");
+        JSONObject op=config.operator(-1);String plant=request.optString("plant");if(config.staff!=null)config.staff.require("worker",plant);
+        new SharedLedger(db,config).validateOperator(op);PeerConfig.require(StaffProtocol.plant(op,plant),"Solo puedes registrar en tu planta.");
         String ci=document(request.optString("document")),name=request.optString("name").trim().replaceAll("\\s+"," ");
         PeerConfig.require(name.isEmpty()||name.length()>=3&&name.length()<=100,"Escribe un nombre de 3 a 100 caracteres o déjalo pendiente.");
         SQLiteDatabase sql=db.getWritableDatabase();sql.beginTransaction();try{
@@ -36,6 +36,7 @@ final class RosterLedger {
             PeerConfig.require(now>0,"Activa fecha y hora automáticas.");long seq;
             try(Cursor c=sql.rawQuery("SELECT COALESCE(MAX(seq),0)+1 FROM roster_events WHERE origin=?",new String[]{config.device})){c.moveToFirst();seq=c.getLong(0);}
             JSONObject b=new JSONObject().put("v",4).put("cluster",config.cluster).put("origin",config.device).put("seq",seq).put("time",now).put("operator",op).put("ci",ci).put("name",name).put("plant",plant);
+            if(config.staff!=null)b.put("staff",StaffProtocol.evidence(config,config.staff,"roster",b.toString()));
             String body=b.toString(),qr="SB4:"+Base64.getUrlEncoder().withoutPadding().encodeToString(body.getBytes(StandardCharsets.UTF_8))+"."+config.mac("worker|"+body);
             accept(qr,now);JSONObject person=db.get("people",personId(ci));JSONObject reply=card(person).put("created",true);
             sql.setTransactionSuccessful();return reply;
@@ -47,7 +48,7 @@ final class RosterLedger {
         JSONObject result=PeerCards.request(db,config,new JSONObject().put("action","issue").put("plant",plant).put("personId",p.getString("id")),now);
         return result.put("alreadyExists",true).put("notice","Este carnet ya estaba registrado. Se conserva la misma persona y su historial.");
     }
-    static boolean format(String qr){return qr!=null&&qr.length()<=2048&&qr.matches("SB4:[A-Za-z0-9_-]+\\.[a-f0-9]{64}");}
+    static boolean format(String qr){return qr!=null&&qr.length()<=8192&&qr.matches("SB4:[A-Za-z0-9_-]+\\.[a-f0-9]{64}");}
     private JSONObject decode(String qr,long now)throws Exception{
         PeerConfig.require(config.shared&&format(qr),"Credencial de trabajador inválida.");
         String[] parts=qr.substring(4).split("\\.",-1);String body=new String(Base64.getUrlDecoder().decode(parts[0]),StandardCharsets.UTF_8);
@@ -56,7 +57,7 @@ final class RosterLedger {
         PeerConfig.require(document(b.getString("ci")).equals(b.getString("ci")),"Carnet no normalizado.");
         String name=b.getString("name");PeerConfig.require(name.isEmpty()||name.length()>=3&&name.length()<=100,"Nombre inválido.");
         JSONObject op=b.getJSONObject("operator");new SharedLedger(db,config).validateOperator(op);boolean known=false;JSONArray plants=config.seed.getJSONArray("plants");for(int i=0;i<plants.length();i++)known|=plants.getString(i).equals(b.getString("plant"));
-        PeerConfig.require(known&&(op.getString("role").equals("admin")||op.getString("plant").equals(b.getString("plant"))),"Planta no autorizada.");return b;
+        PeerConfig.require(known&&StaffProtocol.plant(op,b.getString("plant")),"Planta no autorizada.");if(b.has("staff")){JSONObject unsigned=new JSONObject(body);unsigned.remove("staff");JSONObject g=StaffProtocol.verifyEvidence(config,b.getJSONObject("staff"),"roster",unsigned.toString(),b.getLong("time"));StaffProtocol.require(g,"worker",b.getString("plant"));PeerConfig.require(StaffProtocol.operator(g).toString().equals(op.toString()),"Alta de otra cuenta.");}return b;
     }
     JSONObject accept(String qr,long now)throws Exception{synchronized(db){
         JSONObject b=decode(qr,now);String ci=b.getString("ci"),id=personId(ci),origin=b.getString("origin");long seq=b.getLong("seq");
