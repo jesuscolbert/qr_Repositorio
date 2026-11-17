@@ -1,0 +1,54 @@
+import Foundation
+
+/// Small, dependency-free OOXML writer. All user text is an inline string, never an Excel formula.
+public enum Excel {
+ static func esc(_ s:String)->String{s.filter{$0=="\n" || $0=="\t" || $0.unicodeScalars.allSatisfy{$0.value>=32}}.replacingOccurrences(of:"&",with:"&amp;").replacingOccurrences(of:"<",with:"&lt;").replacingOccurrences(of:">",with:"&gt;").replacingOccurrences(of:"\"",with:"&quot;")}
+ static func col(_ n:Int)->String{var n=n+1,s="";while n>0{n-=1;s=String(UnicodeScalar(65+n%26)!)+s;n/=26};return s}
+ static func text(_ value:String,_ cell:String,_ style:Int=0)->String{"<c r=\"\(cell)\" s=\"\(style)\" t=\"inlineStr\"><is><t xml:space=\"preserve\">\(esc(value))</t></is></c>"}
+ static func number(_ value:Double,_ cell:String,_ style:Int=3)->String{"<c r=\"\(cell)\" s=\"\(style)\"><v>\(value.isFinite ? value:0)</v></c>"}
+ static func row(_ n:Int,_ cells:[String],height:Int=23)->String{"<row r=\"\(n)\" ht=\"\(height)\" customHeight=\"1\">\(cells.joined())</row>"}
+ static func sheet(_ rows:String,widths:[Int],merges:[String]=[],filter:String?=nil,freeze:Int=0)->String{
+  let columns=widths.enumerated().map{"<col min=\"\($0.offset+1)\" max=\"\($0.offset+1)\" width=\"\($0.element)\" customWidth=\"1\"/>"}.joined()
+  let pane=freeze>0 ? "<pane ySplit=\"\(freeze)\" topLeftCell=\"A\(freeze+1)\" activePane=\"bottomLeft\" state=\"frozen\"/>":""
+  return "<?xml version=\"1.0\" encoding=\"UTF-8\"?><worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetViews><sheetView workbookViewId=\"0\" zoomScale=\"90\">\(pane)</sheetView></sheetViews><cols>\(columns)</cols><sheetData>\(rows)</sheetData>"+(filter.map{"<autoFilter ref=\"\($0)\"/>"} ?? "")+(merges.isEmpty ? "":"<mergeCells count=\"\(merges.count)\">"+merges.map{"<mergeCell ref=\"\($0)\"/>"}.joined()+"</mergeCells>")+"<pageMargins left=\"0.3\" right=\"0.3\" top=\"0.5\" bottom=\"0.5\" header=\"0.2\" footer=\"0.2\"/><pageSetup orientation=\"landscape\" paperSize=\"1\" fitToWidth=\"1\" fitToHeight=\"0\"/></worksheet>"
+ }
+ public static func workbook(company:String,period:String,plant:String,records:[J],lastSync:Int64,pending:Int,now:Int64=Wire.now)throws->Data{
+  let people=Set(records.map{$0["persona"].s}),total=records.reduce(0){$0+$1["precio"].n};let unpriced=records.filter{$0["precioPendiente"].b}.count
+  let counts=Dictionary(grouping:records,by:{$0["clave"].s}),conflicts=records.filter{(counts[$0["clave"].s]?.count ?? 0)>1 || !$0["revision"].s.isEmpty()}.count
+  let stamp="Emitido: \(Wire.date(now)) · Última sincronización: \(lastSync>0 ? Wire.date(lastSync):"pendiente") · \(pending) entregas pendientes de compartir."
+  var summary=row(1,[text("\(company.uppercased()) · CONTROL DEL COMEDOR","A1",1)],height:34)+row(2,[text("\(period) · \(plant)","A2",5)])+row(3,[text(stamp,"A3",6)],height:30)
+  summary += row(5,[text("RACIONES","A5",2),number(Double(records.count),"B5",4),text("TRABAJADORES","D5",2),number(Double(people.count),"E5",4)])
+  summary += row(6,[text("IMPORTE (Bs)","A6",2),number(total,"B6",3),text("POR REVISAR","D6",2),number(Double(conflicts),"E6",4)])
+  summary += row(8,[text("COMIDA","A8",2),text("CANTIDAD","B8",2),text("IMPORTE (Bs)","C8",2)])
+  for (i,meal) in Ledger.meals.enumerated(){let rows=records.filter{$0["comida"].s==meal};summary += row(9+i,[text(meal.capitalized,"A\(9+i)",5),number(Double(rows.count),"B\(9+i)",4),number(rows.reduce(0){$0+$1["precio"].n},"C\(9+i)")])}
+  summary += row(14,[text("\(unpriced) registros con precio pendiente. El informe refleja los datos disponibles en este equipo.","A14",6)],height:32)
+  summary += row(15,[text("Los teléfonos sin sincronizar pueden tener entregas que todavía no aparecen. Dieta comparte el límite de almuerzo.","A15",6)],height:32)
+  let headings=["Fecha","Hora","Trabajador","Identificador","Comida","Planta","Encargado","Centro de costo","Importe (Bs)","Revisión","Precio pendiente"]
+  var detail=row(1,[text("DETALLE DE ENTREGAS · \(company.uppercased())","A1",1)],height:32)+row(2,[text(stamp,"A2",6)],height:30)+row(4,headings.enumerated().map{text($0.element,col($0.offset)+"4",2)})
+  for (i,r) in records.enumerated(){let n=i+5;let note=(counts[r["clave"].s]?.count ?? 0)>1 ? "POSIBLE DUPLICADO":r["revision"].s;let vals=[r["fecha"].s,r["hora"].s,r["nombre"].s,r["persona"].s,r["comida"].s.capitalized,r["planta"].s,r["operador"].s,r["centroCosto"].s,"",note,r["precioPendiente"].b ? "Sí":""]
+   detail += row(n,vals.enumerated().map{let cell=col($0.offset)+"\(n)";return $0.offset==8 ? number(r["precio"].n,cell):text($0.element,cell,i%2==0 ? 0:5)})
+  }
+  let plants=Dictionary(grouping:records,by:{$0["planta"].s});var byPlant=row(1,[text("RESULTADOS POR PLANTA","A1",1)],height:32)+row(3,[text("PLANTA","A3",2),text("RACIONES","B3",2),text("TRABAJADORES","C3",2),text("IMPORTE (Bs)","D3",2)])
+  for (i,name) in plants.keys.sorted().enumerated(){let rs=plants[name]!,n=i+4;byPlant += row(n,[text(name,"A\(n)"),number(Double(rs.count),"B\(n)",4),number(Double(Set(rs.map{$0["persona"].s}).count),"C\(n)",4),number(rs.reduce(0){$0+$1["precio"].n},"D\(n)")])}
+  let styles="""
+  <?xml version="1.0" encoding="UTF-8"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="#,##0.00 &quot;Bs&quot;"/></numFmts><fonts count="4"><font><sz val="11"/><name val="Calibri"/><color rgb="FF102039"/></font><font><b/><sz val="18"/><name val="Calibri"/><color rgb="FFFFFFFF"/></font><font><b/><sz val="11"/><name val="Calibri"/><color rgb="FFFFFFFF"/></font><font><b/><sz val="16"/><name val="Calibri"/><color rgb="FF087E68"/></font></fonts><fills count="5"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF102039"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FF087E68"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF1F6FD"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="7"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" applyFill="1"/><xf numFmtId="0" fontId="2" fillId="3" borderId="0" applyFill="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" applyNumberFormat="1"/><xf numFmtId="0" fontId="3" fillId="4" borderId="0" applyFill="1"/><xf numFmtId="0" fontId="0" fillId="4" borderId="0" applyFill="1"/><xf numFmtId="0" fontId="0" fillId="0" borderId="0" applyAlignment="1"><alignment wrapText="1" vertical="center"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>
+  """
+  var files:[String:Data]=[:];func put(_ name:String,_ value:String){files[name]=Data(value.utf8)}
+  put("[Content_Types].xml","<?xml version=\"1.0\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/><Override PartName=\"/xl/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml\"/>"+(1...3).map{"<Override PartName=\"/xl/worksheets/sheet\($0).xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>"}.joined()+"</Types>")
+  put("_rels/.rels","<?xml version=\"1.0\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"xl/workbook.xml\"/></Relationships>")
+  put("xl/workbook.xml","<?xml version=\"1.0\"?><workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><sheets><sheet name=\"Resumen\" sheetId=\"1\" r:id=\"rId1\"/><sheet name=\"Detalle\" sheetId=\"2\" r:id=\"rId2\"/><sheet name=\"Por planta\" sheetId=\"3\" r:id=\"rId3\"/></sheets></workbook>")
+  put("xl/_rels/workbook.xml.rels","<?xml version=\"1.0\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"+(1...3).map{"<Relationship Id=\"rId\($0)\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet\($0).xml\"/>"}.joined()+"<Relationship Id=\"styles\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/></Relationships>")
+  put("xl/styles.xml",styles);put("xl/worksheets/sheet1.xml",sheet(summary,widths:[22,18,22,24,20,18],merges:["A1:F1","A2:F2","A3:F3","A14:F14","A15:F15"]));put("xl/worksheets/sheet2.xml",sheet(detail,widths:[14,12,38,24,16,28,28,22,20,28,18],merges:["A1:K1","A2:K2"],filter:"A4:K\(max(4,records.count+4))",freeze:4));put("xl/worksheets/sheet3.xml",sheet(byPlant,widths:[35,18,23,23],merges:["A1:D1"],freeze:3));return try ZipStore.archive(files)
+ }
+}
+enum ZipStore {
+ static let table:[UInt32]=(0...255).map{value in var c=UInt32(value);for _ in 0..<8{c=(c&1 != 0) ? 0xedb88320^(c>>1):c>>1};return c}
+ static func crc(_ d:Data)->UInt32{var c:UInt32=0xffffffff;for b in d{c=table[Int((c^UInt32(b))&255)]^(c>>8)};return c^0xffffffff}
+ static func archive(_ files:[String:Data])throws->Data{var output=Data(),central=Data();func le<T:FixedWidthInteger>(_ n:T,_ d:inout Data){var n=n.littleEndian;withUnsafeBytes(of:&n){d.append(contentsOf:$0)}}
+  for name in files.keys.sorted(){let body=files[name]!,file=Data(name.utf8),offset=UInt32(output.count),size=UInt32(body.count),sum=crc(body);try require(file.count<65536 && body.count<64*1024*1024,"Excel demasiado grande.")
+   le(UInt32(0x04034b50),&output);for n in [UInt16(20),0,0,0,0]{le(n,&output)};le(sum,&output);le(size,&output);le(size,&output);le(UInt16(file.count),&output);le(UInt16(0),&output);output.append(file);output.append(body)
+   le(UInt32(0x02014b50),&central);for n in [UInt16(20),20,0,0,0,0]{le(n,&central)};le(sum,&central);le(size,&central);le(size,&central);le(UInt16(file.count),&central);for n in [UInt16(0),0,0,0]{le(n,&central)};le(UInt32(0),&central);le(offset,&central);central.append(file)
+  }
+  let offset=UInt32(output.count);output.append(central);le(UInt32(0x06054b50),&output);le(UInt16(0),&output);le(UInt16(0),&output);le(UInt16(files.count),&output);le(UInt16(files.count),&output);le(UInt32(central.count),&output);le(offset,&output);le(UInt16(0),&output);return output
+ }
+}

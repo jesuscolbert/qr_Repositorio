@@ -1,0 +1,49 @@
+name: Compilar control iPhone
+on:
+  workflow_dispatch:
+  push:
+    branches: [soboce-comedor]
+    paths: ['ios/**', '.github/workflows/ios.yml']
+permissions:
+  contents: read
+jobs:
+  ios:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probar licencias, QR y registro sin conexión
+        run: swift test --package-path ios
+        env:
+          IOS_TEST_OUTPUT: ${{ github.workspace }}/ios/build/validation
+      - name: Comprobar Excel y firmas interoperables
+        run: python3 ios/verify_exports.py ios/build/validation
+      - name: Preparar Xcode
+        if: hashFiles('ios/project.yml') != ''
+        run: |
+          brew install xcodegen
+          cd ios
+          xcodegen generate
+      - name: Compilar y probar el iPhone simulado
+        if: hashFiles('ios/project.yml') != ''
+        run: bash ios/ci_simulator.sh
+      - name: Compilar dispositivo sin credenciales Apple
+        if: hashFiles('ios/project.yml') != ''
+        run: |
+          xcodebuild -project ios/ComedorControl.xcodeproj -scheme ComedorControl -configuration Release -destination 'generic/platform=iOS' -archivePath ios/build/ComedorControl.xcarchive CODE_SIGNING_ALLOWED=NO archive
+          mkdir -p ios/build/package/Payload
+          cp -R ios/build/ComedorControl.xcarchive/Products/Applications/*.app ios/build/package/Payload/
+          cd ios/build/package
+          zip -qr ../Colbert-Control-iOS-SIN-FIRMA.ipa Payload
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Colbert-Control-iOS-validacion
+          path: ios/build/validation/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: success() && hashFiles('ios/project.yml') != ''
+        with:
+          name: Colbert-Control-iOS-sin-firma
+          path: ios/build/Colbert-Control-iOS-SIN-FIRMA.ipa
+          if-no-files-found: error
