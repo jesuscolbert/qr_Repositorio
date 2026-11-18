@@ -23,8 +23,8 @@ public final class StaffActivity extends FragmentActivity {
   company=getIntent().getStringExtra("company");if(company==null)company=Companies.current(this);config=new PeerConfig(new Vault(this,company).read("peerConfig"));auth=StaffAccess.attach(this,config);PeerConfig.require(auth!=null,"Esta instalación no tiene configuradas las cuentas.");
   biometric=new BiometricPrompt(this,ContextCompat.getMainExecutor(this),new BiometricPrompt.AuthenticationCallback(){
    @Override public void onAuthenticationSucceeded(BiometricPrompt.AuthenticationResult result){biometricSuccess();}
-   @Override public void onAuthenticationError(int code,CharSequence text){biometricPending=false;if(showingBiometric)biometricSettings();if(code!=BiometricPrompt.ERROR_USER_CANCELED&&code!=BiometricPrompt.ERROR_NEGATIVE_BUTTON&&code!=BiometricPrompt.ERROR_CANCELED)error(text.toString());}
-   @Override public void onAuthenticationFailed(){error("Huella no reconocida. Vuelve a intentarlo o usa tu contraseña.");}
+   @Override public void onAuthenticationError(int code,CharSequence text){biometricPending=false;if(isFinishing()||isDestroyed())return;if(showingBiometric)biometricSettings();if(code!=BiometricPrompt.ERROR_USER_CANCELED&&code!=BiometricPrompt.ERROR_NEGATIVE_BUTTON&&code!=BiometricPrompt.ERROR_CANCELED)error(text.toString());}
+   @Override public void onAuthenticationFailed(){if(!isFinishing()&&!isDestroyed())error("Huella no reconocida. Vuelve a intentarlo o usa tu contraseña.");}
   });
   if(b!=null){biometricPending=b.getBoolean("biometricPending");biometricEnable=b.getBoolean("biometricEnable");biometricProfile=b.getString("biometricProfile","");}
   if((b!=null&&b.getBoolean("showingBiometric"))||(b==null&&getIntent().getBooleanExtra("biometric",false)))biometricSettings();else if(biometricPending)login();else if(auth.ready())finishLogin();else login();
@@ -78,7 +78,7 @@ public final class StaffActivity extends FragmentActivity {
   biometricEnable=enable;biometricProfile=auth.profile;biometricPending=true;
   try{biometric.authenticate(new BiometricPrompt.PromptInfo.Builder().setTitle(enable?"Activar acceso con huella":"Entrar a mi cuenta").setSubtitle("Solo en tu celular personal").setAllowedAuthenticators(StaffBiometric.AUTHENTICATORS).setNegativeButtonText(enable?"Cancelar":"Usar contraseña").build());}catch(Exception e){biometricPending=false;error("No se pudo abrir el lector. Revisa los ajustes de huella o entra con contraseña.");}
  }
- private void biometricSuccess(){if(!biometricPending||auth==null||!auth.profile.equals(biometricProfile))return;boolean enable=biometricEnable;biometricPending=false;
+ private void biometricSuccess(){if(isFinishing()||isDestroyed()||!biometricPending||auth==null||!auth.profile.equals(biometricProfile))return;boolean enable=biometricEnable;biometricPending=false;
   task(()->{try{auth.refresh(true);}catch(java.io.IOException ignored){}if(enable){auth.enableBiometric();}else{PeerConfig.require(auth.biometricAllowed(),"Tu acceso cambió. Entra con tu usuario y contraseña.");StaffAccess.unlocked=auth.profile;}return new JSONObject();},r->{if(enable)biometricSettings();else finishLogin();});
  }
  private void finishLogin(){if(!auth.ready()){screen("Cuenta pendiente","Solicita tu usuario y contraseña a la cuenta maestra. Si ya tenías cuenta, debe configurar esa misma cuenta para conservar tu historial.");button("Iniciar sesión",this::login);button("Acceso privado de la cuenta maestra",this::masterSetup);return;}if(getIntent().getBooleanExtra("manage",false))dashboard();else complete();}
