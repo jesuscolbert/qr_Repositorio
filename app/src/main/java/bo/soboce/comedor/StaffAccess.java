@@ -102,6 +102,15 @@ final class StaffAccess {
  private void passwordSucceeded(){companyVault.remove("staffPasswordFailures:"+profile);companyVault.remove("staffPasswordWait:"+profile);unlocked=profile;}
  void unlockPasswordOffline(String username,String password)throws Exception {passwordWait();try{PeerConfig.require(passwordCached(),"Conecta este teléfono a internet para iniciar sesión por primera vez o actualizar tu contraseña.");JSONObject cached=new JSONObject(companyVault.read("staffLogin:"+profile));PeerConfig.require(cached.getString("username").equals(StaffPassword.username(username))&&StaffPassword.verifyLocal(password,cached),"Usuario o contraseña incorrectos.");passwordSucceeded();}catch(Exception e){passwordFailed();throw e;}}
  boolean biometricAllowed(){try{return profiles().length()==1&&authorized()&&(username().isEmpty()||passwordCached())&&global.get("staffBiometric:"+profile).equals("yes");}catch(Exception e){return false;}}
+ String biometricSetupProblem(){try{
+  if(!authorized())return "Primero inicia sesión con tu usuario y contraseña en esta empresa.";
+  int count=profiles().length();if(count!=1)return "Hay "+count+" perfiles guardados en esta instalación. La huella solo se habilita con un único perfil personal; en un celular compartido utiliza contraseña. No borres los datos del comedor.";
+  if(username().isEmpty())return "Esta cuenta todavía usa el PIN anterior. La cuenta maestra debe configurar su usuario y contraseña en la cuenta existente.";
+  if(!passwordCached())return "Entra una vez con tu usuario y contraseña actual y conexión a internet para habilitar la huella en este celular.";
+  return "";
+ }catch(Exception e){return "No se pudo comprobar el perfil guardado. Reintenta sin borrar los datos.";}}
+ void enableBiometric()throws Exception {PeerConfig.require(ready(),"Entra con tu contraseña antes de activar la huella.");String problem=biometricSetupProblem();PeerConfig.require(problem.isEmpty(),problem);global.put("staffBiometric:"+profile,"yes");}
+ void disableBiometric()throws Exception {PeerConfig.require(ready(),"Entra con tu contraseña antes de cambiar el acceso.");global.put("staffBiometric:"+profile,"no");}
  void saveReply(JSONObject reply)throws Exception {synchronized(CACHE_LOCK){
   if(reply.has("replacement")&&!certificate().isEmpty()){String value=reply.getString("replacement");JSONObject newer=StaffProtocol.grant(value,config),old=StaffProtocol.grant(certificate(),config);PeerConfig.require(newer.getString("id").equals(old.getString("id"))&&newer.getLong("revision")>old.getLong("revision")&&!newer.getString("key").equals(old.getString("key")),"Respuesta de reemplazo inválida.");companyVault.put("staffReplacement:"+profile,value);}
   if(reply.has("directory")){String cert=reply.getString("directory");JSONObject dir=StaffProtocol.open(cert,config);PeerConfig.require(dir.getString("kind").equals("directory")&&dir.getLong("revision")>=0,"Lista de cuentas inválida.");String previous=companyVault.get("staffDirectory");long revision=previous.isEmpty()?0:StaffProtocol.open(previous,config).getLong("revision");

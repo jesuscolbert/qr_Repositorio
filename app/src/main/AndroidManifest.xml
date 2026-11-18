@@ -14,7 +14,7 @@
   <activity android:name=".MainActivity" android:exported="true"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter></activity>
   <activity android:name=".QrPrintActivity" android:exported="false"/>
   <activity android:name=".WorkerLinkActivity" android:exported="false"/>
-  <activity android:name=".StaffActivity" android:exported="false"/>
+  <activity android:name=".StaffActivity" android:exported="false" android:theme="@style/StaffTheme"/>
   <service android:name=".PeerService" android:exported="false" android:foregroundServiceType="connectedDevice"/>
   <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.files" android:exported="false" android:grantUriPermissions="true"><meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/paths"/></provider>
  </application>

@@ -73,7 +73,8 @@ public class MainActivity extends Activity {
  Dialog navigation;
  void paidAction(Runnable action){if(staff!=null&&!staff.ready()){openStaff(false);return;}if(!licenses.client.showIfBlocked(this))action.run();}
  boolean can(String action){return staff==null||staff.can(action);}
- void openStaff(boolean manage){if(awaitingStaff)return;stopScanner();awaitingStaff=true;screen("Acceso del personal","Desbloquea tu cuenta autorizada. Los registros se conservan.");startActivityForResult(new Intent(this,StaffActivity.class).putExtra("company",Companies.current(this)).putExtra("manage",manage),724);}
+ void openStaff(boolean manage){openStaff(manage,false);}
+ void openStaff(boolean manage,boolean biometric){if(awaitingStaff)return;stopScanner();awaitingStaff=true;screen("Acceso del personal","Desbloquea tu cuenta autorizada. Los registros se conservan.");startActivityForResult(new Intent(this,StaffActivity.class).putExtra("company",Companies.current(this)).putExtra("manage",manage).putExtra("biometric",biometric),724);}
  void openMenu(){
   if(busy||vault==null||licenses==null)return;List<NavigationMenu.Entry> entries=new ArrayList<>();if(Companies.enabled(this))entries.add(new NavigationMenu.Entry("Cambiar empresa",companyName()+" · SOBOCE y FRIGOR",this::chooseCompany));
   if(session!=null){
@@ -89,7 +90,8 @@ public class MainActivity extends Activity {
   }
   if(licenses.client.configured())entries.add(new NavigationMenu.Entry("Licencia y pagos","Permiso de uso y comprobantes",()->startActivity(new Intent(this,bo.colbert.licensing.LicenseActivity.class))));
   if(session!=null&&session.optBoolean("p2p"))entries.add(new NavigationMenu.Entry("Estado de la red","Trabajadores y consumos compartidos",this::network));
-  entries.add(new NavigationMenu.Entry(staff==null?"Encargado y planta":staff.master()?"Encargados y permisos":"Mi cuenta",staff==null?"Ajustes de este teléfono":"PIN, autorización y cambio de encargado",()->{if(!vault.get("pending").isEmpty())error("Comprueba la entrega pendiente antes de cambiar la configuración.");else settings();}));
+  entries.add(new NavigationMenu.Entry(staff==null?"Encargado y planta":staff.master()?"Encargados y permisos":"Mi cuenta",staff==null?"Ajustes de este teléfono":"Usuario, contraseña y acceso personal",()->{if(!vault.get("pending").isEmpty())error("Comprueba la entrega pendiente antes de cambiar la configuración.");else settings();}));
+  if(staff!=null)entries.add(new NavigationMenu.Entry("Acceso con huella","Activar o comprobar la biometría de este celular",()->{if(!vault.get("pending").isEmpty())error("Comprueba la entrega pendiente antes de cambiar la configuración.");else openStaff(true,true);}));
   navigation=NavigationMenu.show(this,companyName(),session==null?"Configura este teléfono":session.optString("operator")+" · "+plant,entries);
  }
  void printQr(){startActivity(new Intent(this,QrPrintActivity.class).putExtra("company",Companies.current(this)).putExtra("plant",plant));}

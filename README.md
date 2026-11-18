@@ -1,3 +1,11 @@
+## Actualización 1.16.1: acceso con huella visible y diagnóstico
+
+El menú tiene **Acceso con huella** para la cuenta maestra y los encargados. También aparece **Configurar acceso con huella** en el login y en Mi cuenta, incluso si no hay lector, huellas registradas o contraseña local. La pantalla explica el estado del dispositivo y de la cuenta, y permite abrir los ajustes de Android y volver a comprobar. No borra perfiles ni oculta el control cuando hay varios: indica su cantidad y mantiene el requisito de un único perfil personal.
+
+Se usa la versión estable de [AndroidX Biometric](https://developer.android.com/jetpack/androidx/releases/biometric), con la misma biometría fuerte para consultar disponibilidad y mostrar el diálogo del sistema, incluido Android 8. La activación exige una cuenta con contraseña vigente, sesión abierta y confirmación biométrica. El restablecimiento de contraseña, la baja y el reemplazo de teléfono siguen invalidando el acceso al recibirse. El menú deja de mencionar las antiguas autorizaciones por PIN.
+
+Actualizar encima de 1.16.0 sin desinstalar ni borrar datos. No requiere modificar coordinadores, Cobros, la app del obrero, los QR ni las bases. Las pruebas comprueban visibilidad para maestro/encargado, acceso desde el login, explicación de múltiples perfiles, bloqueo de activación sin sesión y conservación de licencias y entregas.
+
 ## Actualización 1.16.0: usuario y contraseña administrados por el maestro
 
 Solo la cuenta maestra crea administradores y encargados, asigna usuario/contraseña, restablece contraseñas y elimina accesos. Los roles administrador y encargado no administran cuentas. Se configura cada empresa por separado. La pantalla normal es **Iniciar sesión**, con usuario y contraseña; no se solicitan autorizaciones QR para cada teléfono.
