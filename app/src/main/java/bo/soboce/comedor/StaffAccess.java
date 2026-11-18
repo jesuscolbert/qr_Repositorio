@@ -19,25 +19,37 @@ final class StaffAccess {
  private volatile long refreshed;
  private volatile String cachedPublicKey;
  private String indexedDirectory="";private final Map<String,String> indexedAccounts=new HashMap<>();
- StaffAccess(Context c,PeerConfig config)throws Exception {this.context=c.getApplicationContext();this.config=config;global=new Vault(c,Companies.primary(c));companyVault=new Vault(c,Companies.company(c,config));profile=global.get("staffSelected");config.staff=this;}
+ StaffAccess(Context c,PeerConfig config)throws Exception {this.context=c.getApplicationContext();this.config=config;global=new Vault(c,Companies.primary(c));companyVault=new Vault(c,Companies.company(c,config));JSONArray saved=profiles();String selected=global.get("staffSelected");boolean found=false;for(int i=0;i<saved.length();i++)found|=saved.getJSONObject(i).getString("profile").equals(selected);if(!found)selected=saved.length()==1?saved.getJSONObject(0).getString("profile"):"";profile=selected;config.staff=this;}
  static boolean enabled(PeerConfig c){return c.shared&&!c.raw.optString("staffAuthority").isEmpty();}
  static StaffAccess attach(Context c,PeerConfig config)throws Exception{return enabled(config)?new StaffAccess(c,config):null;}
  static synchronized void started(){if(activities++==0){if(backgroundAt>0&&SystemClock.elapsedRealtime()-backgroundAt>=120000)lock();backgroundAt=0;}}
  static synchronized void stopped(){activities=Math.max(0,activities-1);if(activities==0)backgroundAt=SystemClock.elapsedRealtime();}
  static void lock(){unlocked="";}
  static boolean session(String profile){return !profile.isEmpty()&&unlocked.equals(profile)&&(backgroundAt==0||SystemClock.elapsedRealtime()-backgroundAt<120000);}
- JSONArray profiles()throws Exception {String s=global.get("staffProfiles");return s.isEmpty()?new JSONArray():new JSONArray(s);}
+ private static JSONArray validProfiles(String text)throws Exception {JSONArray a=new JSONArray(text);Set<String> ids=new HashSet<>();PeerConfig.require(a.length()<=10,"Lista de perfiles inválida.");for(int i=0;i<a.length();i++){JSONObject p=a.getJSONObject(i);PeerConfig.require(ids.add(UUID.fromString(p.getString("profile")).toString())&&p.getString("name").trim().length()>=3&&p.getString("salt").matches("[a-f0-9]{64}")&&p.getString("pin").matches("[a-f0-9]{64}"),"Perfil guardado inválido.");}return a;}
+ JSONArray profiles()throws Exception {synchronized(CACHE_LOCK){
+  String primary=null,backup=null;Exception problem=null;
+  try{primary=global.read("staffProfiles");if(!primary.isEmpty())validProfiles(primary);}catch(Exception e){problem=e;primary=null;}
+  try{backup=global.read("staffProfilesBackup");if(!backup.isEmpty())validProfiles(backup);}catch(Exception e){if(problem==null)problem=e;backup=null;}
+  // A valid encrypted copy repairs a missing/corrupt index, retaining the original PIN and key.
+  if(primary!=null&&!primary.isEmpty()&&!primary.equals("[]")){if(!primary.equals(backup))global.put("staffProfilesBackup",primary);return validProfiles(primary);}
+  if(backup!=null&&!backup.isEmpty()&&!backup.equals("[]")){global.put("staffProfiles",backup);return validProfiles(backup);}
+  if(problem!=null)throw problem;
+  return new JSONArray();
+ }}
  JSONObject local()throws Exception {JSONArray a=profiles();for(int i=0;i<a.length();i++)if(a.getJSONObject(i).getString("profile").equals(profile))return a.getJSONObject(i);throw new IllegalArgumentException("Crea o selecciona tu perfil personal.");}
  private static String alias(String profile){return "comedor-staff-"+profile;}
  PrivateKey key()throws Exception {KeyStore store=KeyStore.getInstance("AndroidKeyStore");store.load(null);return (PrivateKey)store.getKey(alias(profile),null);}
  String publicKey()throws Exception {String value=cachedPublicKey;if(value!=null)return value;KeyStore store=KeyStore.getInstance("AndroidKeyStore");store.load(null);value=WalletProtocol.publicText(store.getCertificate(alias(profile)).getPublicKey());cachedPublicKey=value;return value;}
- String create(String name,String pin)throws Exception {
+ String create(String name,String pin)throws Exception {return create(name,pin,"new");}
+ String create(String name,String pin,String intent)throws Exception {synchronized(CACHE_LOCK){
+  PeerConfig.require(intent.equals("new")||intent.equals("recover"),"Tipo de acceso inválido.");
   PeerConfig.require(name.trim().length()>=3&&name.trim().length()<=100&&pin.matches("[0-9]{6}"),"Escribe tu nombre y un PIN de seis números.");
   JSONArray a=profiles();PeerConfig.require(a.length()<10,"Este teléfono ya tiene diez perfiles.");String id=UUID.randomUUID().toString(),salt=PeerConfig.random();
   KeyPairGenerator gen=KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_EC,"AndroidKeyStore");gen.initialize(new KeyGenParameterSpec.Builder(alias(id),KeyProperties.PURPOSE_SIGN|KeyProperties.PURPOSE_VERIFY).setAlgorithmParameterSpec(new ECGenParameterSpec("secp256r1")).setDigests(KeyProperties.DIGEST_SHA256).build());gen.generateKeyPair();
-  a.put(new JSONObject().put("profile",id).put("name",name.trim()).put("salt",salt).put("pin",pinHash(pin,salt)));
-  global.put("staffProfiles",a.toString());global.put("staffSelected",id);unlocked=id;return id;
- }
+  a.put(new JSONObject().put("profile",id).put("name",name.trim()).put("salt",salt).put("pin",pinHash(pin,salt)).put("intent",intent));
+  Map<String,String> values=new HashMap<>();values.put("staffProfiles",a.toString());values.put("staffProfilesBackup",a.toString());values.put("staffSelected",id);global.putAll(values);unlocked=id;return id;
+ }}
  static String pinHash(String pin,String salt)throws Exception {PBEKeySpec spec=new PBEKeySpec(pin.toCharArray(),salt.getBytes(java.nio.charset.StandardCharsets.UTF_8),210000,256);try{return PeerConfig.hex(SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).getEncoded());}finally{spec.clearPassword();}}
  void unlock(String pin)throws Exception {
   JSONObject p=local();long now=System.currentTimeMillis(),until=Long.parseLong(global.get("staffWait:"+profile).isEmpty()?"0":global.get("staffWait:"+profile));

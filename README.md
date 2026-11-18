@@ -1,3 +1,11 @@
+## Actualización 1.15.2: iniciar sesión y recuperar cuentas existentes
+
+La entrada siempre muestra **Iniciar sesión**, con los nombres y PIN ya guardados. Una instalación sin perfil ofrece **Ya tengo cuenta · recuperar acceso** y **Solicitar cuenta nueva** por separado. Recuperar acceso prepara una solicitud de diez minutos: el maestro escanea o pega la solicitud, selecciona la cuenta existente y confirma el reemplazo. Se conserva el ID de la cuenta, rol, plantas y autoría de entregas. El nombre no autentica a nadie; la aprobación del maestro vincula la nueva clave del teléfono y revoca la anterior al sincronizar. La cuenta maestra mantiene su recuperación privada existente.
+
+Las solicitudes marcadas como recuperación no pueden crear una cuenta mediante `grant`, incluso desde un cliente antiguo. Actualizar también el teléfono maestro para mostrar la selección de cuentas. Los perfiles previos migran sin cambiar su PIN o clave, con un respaldo cifrado del índice y escrituras atómicas. Una lectura fallida se distingue de un perfil ausente: se restaura una copia válida, o se conserva lo que hay y se solicita reintentar sin sobrescribirlo. SOBOCE y FRIGOR siguen autorizándose por empresa; las dos variantes instaladas por separado tienen almacenamiento local distinto.
+
+No cambia el esquema SQLite, el padrón, consumos, QR de obreros ni licencias de Cobros. Instalar encima de la misma app, sin desinstalar ni borrar datos. Las pruebas cubren migración del formato anterior, índice ausente/corrupto, PIN, recuperación sin duplicados, permisos, revocación, vencimiento y aislamiento de empresas.
+
 ## Actualización 1.15.1: respuesta del escáner
 
 Las cuentas reutilizan en memoria los valores ya descifrados y las firmas ya verificadas únicamente mientras coincidan el valor persistido, la autoridad y la empresa. Los cambios de permisos o revocaciones invalidan las lecturas de las otras instancias; no se cachea una decisión de acceso independiente del permiso vigente.

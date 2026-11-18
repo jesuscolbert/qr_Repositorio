@@ -52,6 +52,31 @@ test('private recovery is single use and replaces the master without deleting ot
  const s=await setup(),u=await enroll(s),next=await keys();const before=await s.tx.get('staffMaster');await s.call(next,{action:'recover',code:recovery,name:'Dueña recuperada',device:next.device});assert.equal(await s.tx.get('staffMaster'),before);assert.ok(await s.tx.get('staffUser:'+u.user.id));
  await assert.rejects(s.call(s.master,{action:'list'}));await assert.rejects(s.call(next,{action:'recover',code:recovery,name:'Otro intento',device:next.device}),/ya fue utilizada/);
 });
+test('existing-account login recovery requires the master and cannot create a duplicate account',async()=>{
+ const s=await setup(),u=await enroll(s,'encargado',['Norte','Sur']),next=await keys(),admin=await enroll(s,'admin');
+ const requested=await s.call(next,{action:'request',name:u.user.name,device:next.device,intent:'recover'});
+ assert.equal(requested.intent,'recover');assert.equal((await s.call(next,{action:'status'})).pending,true);
+ const list=await s.call(s.master,{action:'list'});assert.equal(list.pending.find(x=>x.id===requested.id).intent,'recover');
+ const update={action:'update',id:u.user.id,expected:u.user.revision,name:u.user.name,role:u.user.role,plants:u.user.plants,permissions:u.user.permissions,active:u.user.active,request:requested.id};
+ for(const actor of [next,u.k,admin.k])await assert.rejects(s.call(actor,update));
+ const size=[...s.tx.data.keys()].filter(x=>x.startsWith('staffUser:')).length;
+ await assert.rejects(s.call(s.master,{...update,action:'grant'}),/cuenta existente/);
+ const recovered=body((await s.call(s.master,update)).certificate);
+ for(const field of ['id','name','role','plants','permissions','active'])assert.deepEqual(recovered[field],u.user[field]);
+ assert.equal(recovered.key,next.pub);assert.equal(recovered.device,next.device);assert.equal([...s.tx.data.keys()].filter(x=>x.startsWith('staffUser:')).length,size);
+ assert.equal(body((await s.call(next,{action:'status'})).certificate).id,u.user.id);
+ await assert.rejects(authenticate(s.tx,await proof(u.k,{action:'status'},'lease'),'lease',s.env,now));
+ await assert.rejects(s.call(s.master,{...update,expected:recovered.revision}));
+});
+test('recovery request expiry and company scope cannot be bypassed',async()=>{
+ const s=await setup(),u=await enroll(s),next=await keys();await s.call(next,{action:'request',name:u.user.name,device:next.device,intent:'recover'});
+ const update={action:'update',id:u.user.id,expected:u.user.revision,name:u.user.name,role:u.user.role,plants:u.user.plants,permissions:u.user.permissions,active:true,request:await digest(next.pub)};
+ await assert.rejects(s.call(s.master,update,now+600001),/reemplazo inválida/);
+ await assert.rejects(s.call(next,{action:'request',name:u.user.name,device:next.device,intent:'automatic'}),/Tipo de solicitud/);
+ const otherEnv={...s.env,STAFF_POLICY:JSON.stringify({...JSON.parse(s.env.STAFF_POLICY),cluster:'9'.repeat(64)})};
+ await assert.rejects(staffOperation(s.tx,await proof(s.master,update),otherEnv,now),/no pertenece/);
+ assert.equal((await s.tx.get('staffUser:'+u.user.id)).key,u.k.pub);
+});
 test('a link permission cannot be used to bind workers of another plant, even by lying about the plant',async()=>{
  const s=await setup(),u=await enroll(s),north='1'.repeat(64),south='2'.repeat(64);
  await s.call(s.root,{action:'seed',items:[{tag:north,plant:'Norte'},{tag:south,plant:'Sur'}]});

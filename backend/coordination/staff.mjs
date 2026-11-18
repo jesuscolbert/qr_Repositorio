@@ -43,10 +43,11 @@ export async function staffOperation(tx,envelope,env,now){
  }
  if(r.action==='request'){
   require(typeof r.name==='string'&&r.name.trim().length>=3&&r.name.trim().length<=100&&hex.test(r.device||''),'Completa tu nombre.');
+  const intent=r.intent??'new';require(['new','recover'].includes(intent),'Tipo de solicitud inválido.');
   const existing=await tx.get('staffKey:'+hash);if(existing)return {ok:true,alreadyKnown:true};
   const pending=await tx.list({prefix:'staffPending:',limit:501});for(const [k,v] of pending)if(v.expires<now)await tx.delete(k);
   require([...pending.values()].filter(x=>x.expires>=now).length<200,'Hay demasiadas solicitudes pendientes.');
-  await tx.put('staffPending:'+hash,{key:envelope.key,device:r.device,name:r.name.trim(),expires:now+600000});return {ok:true,id:hash,expires:now+600000};
+  await tx.put('staffPending:'+hash,{key:envelope.key,device:r.device,name:r.name.trim(),intent,expires:now+600000});return {ok:true,id:hash,intent,expires:now+600000};
  }
  if(r.action==='claim'||r.action==='recover'){
   require(hex.test(r.code||'')&&hex.test(r.device||'')&&typeof r.name==='string'&&r.name.trim().length>=3&&r.name.trim().length<=100,'Código o nombre inválidos.');
@@ -71,10 +72,11 @@ export async function staffOperation(tx,envelope,env,now){
  const {user}=await authenticate(tx,envelope,'staff',env,now);
  require(user.role==='master','Solo el usuario maestro puede administrar cuentas.');
  if(r.action==='list'){
-  const pending=await tx.list({prefix:'staffPending:',limit:200});return {ok:true,directory:await directory(tx,env,now),pending:[...pending.entries()].filter(([,v])=>v.expires>=now).map(([k,v])=>({id:k.slice('staffPending:'.length),name:v.name,expires:v.expires}))};
+  const pending=await tx.list({prefix:'staffPending:',limit:200});return {ok:true,directory:await directory(tx,env,now),pending:[...pending.entries()].filter(([,v])=>v.expires>=now).map(([k,v])=>({id:k.slice('staffPending:'.length),name:v.name,intent:v.intent||'new',expires:v.expires}))};
  }
  if(r.action==='grant'){
   require(hex.test(r.request||''),'Escanea la solicitud del teléfono.');const pending=await tx.get('staffPending:'+r.request);require(pending&&pending.expires>=now,'La solicitud venció. Genera otra en el teléfono del encargado.');
+  require(pending.intent!=='recover','Esta persona ya tiene cuenta. Selecciona su cuenta existente para recuperar el acceso, sin crear otra.');
   require(!await tx.get('staffKey:'+r.request),'Esta solicitud ya fue autorizada.');
   require(['admin','encargado'].includes(r.role)&&typeof r.name==='string'&&r.name.trim().length>=3&&r.name.trim().length<=100,'Nombre o rol inválidos.');
   require(Array.isArray(r.plants)&&r.plants.length>0&&new Set(r.plants).size===r.plants.length&&r.plants.every(x=>p.plants.includes(x)),'Selecciona plantas válidas.');

@@ -32,6 +32,37 @@ public class StaffTest {
   String grant=seal(body),directory=seal(new JSONObject().put("kind","directory").put("cluster",config.cluster).put("revision",revision).put("time",now).put("accounts",new JSONArray().put(grant)));auth.saveReply(new JSONObject().put("certificate",grant).put("directory",directory));return grant;
  }
  JSONObject scan(String qr,String meal,String plant)throws Exception{JSONObject req=fixture.scan(qr,meal,plant);return req.put("staffProof",auth.networkProof("scan",new JSONObject(req.toString())));}
+ @Test public void existingPinAndAccountSurviveUpdateAndCompanySwitchWithoutCreatingAnotherAccount()throws Exception{
+  String certificate=authorize("encargado",true,"Planta Norte"),id=auth.profile,key=auth.publicKey(),device=config.device;
+  // Exact legacy format: only the primary encrypted index, without the new intent field.
+  JSONArray legacy=auth.profiles();legacy.getJSONObject(0).remove("intent");auth.global.put("staffProfiles",legacy.toString());auth.global.remove("staffProfilesBackup");auth.global.remove("staffSelected");StaffAccess.lock();
+  Companies.install(fixture.context);Companies.install(fixture.context);Companies.select(fixture.context,"frigor");Companies.select(fixture.context,"soboce");
+  StaffAccess reopened=new StaffAccess(fixture.context,fixture.config("soboce"));assertEquals(id,reopened.profile);assertEquals(1,reopened.profiles().length());assertEquals(key,reopened.publicKey());assertEquals(device,reopened.config.device);assertFalse(reopened.ready());
+  reopened.unlock("591234");assertTrue(reopened.ready());assertEquals(certificate,reopened.certificate());assertEquals(auth.grant().getString("id"),reopened.grant().getString("id"));assertFalse(reopened.master());assertTrue(Companies.license(fixture.context,"soboce").allowed());assertEquals(1,new OfflineLedger(db,config).records().size());
+ }
+ @Test public void encryptedBackupRestoresMissingAndCorruptProfileIndexWithOriginalPin()throws Exception{
+  authorize("encargado",true,"Planta Norte");String id=auth.profile,key=auth.publicKey();auth.global.remove("staffProfiles");StaffAccess.lock();
+  StaffAccess restored=new StaffAccess(fixture.context,config);assertEquals(id,restored.profile);restored.unlock("591234");assertTrue(restored.ready());assertEquals(key,restored.publicKey());
+  android.content.SharedPreferences prefs=fixture.context.getSharedPreferences("vault",0);prefs.edit().putString("staffProfiles","damaged-index").commit();StaffAccess.lock();restored=new StaffAccess(fixture.context,config);restored.unlock("591234");assertTrue(restored.ready());assertNotEquals("damaged-index",prefs.getString("staffProfiles",""));assertEquals(1,restored.profiles().length());
+ }
+ @Test public void unreadableProfilesNeverBecomeAnEmptyListOrOverwritePreviousCredentials()throws Exception{
+  android.content.SharedPreferences prefs=fixture.context.getSharedPreferences("vault",0);prefs.edit().putString("staffProfiles","unreadable-original").putString("staffProfilesBackup","unreadable-backup").commit();
+  for(WalletTest.Attempt attempt:Arrays.<WalletTest.Attempt>asList(()->auth.profiles(),()->auth.create("Otro encargado","123456"),()->new StaffAccess(fixture.context,config))){try{attempt.run();fail("Unreadable credentials were overwritten or ignored");}catch(java.io.IOException expected){}}
+  assertEquals("unreadable-original",prefs.getString("staffProfiles",""));assertEquals("unreadable-backup",prefs.getString("staffProfilesBackup",""));assertEquals(1,new OfflineLedger(db,config).records().size());assertTrue(Companies.license(fixture.context,"soboce").allowed());
+ }
+ @Test public void recoveryProfileIsPendingAndCannotReuseAnotherPersonsGrants()throws Exception{
+  String old=authorize("encargado",true,"Planta Norte"),id=auth.profile;auth.create("Encargado autorizado","123456","recover");StaffAccess recovery=new StaffAccess(fixture.context,config);
+  assertNotEquals(id,recovery.profile);assertEquals("recover",recovery.local().getString("intent"));assertFalse(recovery.authorized());recovery.saveReply(new JSONObject().put("certificate",old));assertFalse(recovery.ready());
+  recovery.select(id);StaffAccess original=new StaffAccess(fixture.context,config);original.unlock("591234");assertTrue(original.ready());assertEquals(2,original.profiles().length());assertEquals(1,new OfflineLedger(db,config).records().size());
+ }
+ @Test public void loginIsVisibleWithSavedAccountsAndOnAnEmptyInstallation()throws Exception{
+  authorize("encargado",true,"Planta Norte");StaffAccess.lock();android.app.Instrumentation i=InstrumentationRegistry.getInstrumentation();PeerDatabaseTest ui=new PeerDatabaseTest();
+  StaffActivity saved=(StaffActivity)i.startActivitySync(new android.content.Intent(fixture.context,StaffActivity.class).putExtra("company","soboce").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));
+  try{ui.waitText(saved,"Iniciar sesión");ui.waitText(saved,"Entrar · Encargado autorizado");ui.waitText(saved,"Ya tengo cuenta · recuperar acceso");ui.screenshot("32-login-cuenta-existente");}finally{i.runOnMainSync(saved::finish);}
+  auth.global.remove("staffProfiles");auth.global.remove("staffProfilesBackup");auth.global.remove("staffSelected");
+  StaffActivity empty=(StaffActivity)i.startActivitySync(new android.content.Intent(fixture.context,StaffActivity.class).putExtra("company","soboce").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));
+  try{ui.waitText(empty,"Iniciar sesión");ui.waitText(empty,"Ya tengo cuenta · recuperar acceso");ui.screenshot("33-login-recuperacion");}finally{i.runOnMainSync(empty::finish);}
+ }
  @Test public void migrationPreservesExistingDataPendingOperationsAndBillingWithoutAutoGrantingAdmin()throws Exception{
   assertEquals(2,db.rows("people").size());assertEquals(1,new OfflineLedger(db,config).records().size());assertFalse(auth.authorized());assertTrue(Companies.license(fixture.context,"soboce").allowed());
   WalletTest.rejected(()->config.operator(-1));String old=db.get("people","CI-0012345").toString();new Vault(fixture.context,"soboce").put("pending","legacy-pending");
