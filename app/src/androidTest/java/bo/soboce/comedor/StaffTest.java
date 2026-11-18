@@ -55,6 +55,12 @@ public class StaffTest {
   assertNotEquals(id,recovery.profile);assertEquals("recover",recovery.local().getString("intent"));assertFalse(recovery.authorized());recovery.saveReply(new JSONObject().put("certificate",old));assertFalse(recovery.ready());
   recovery.select(id);StaffAccess original=new StaffAccess(fixture.context,config);original.unlock("591234");assertTrue(original.ready());assertEquals(2,original.profiles().length());assertEquals(1,new OfflineLedger(db,config).records().size());
  }
+ @Test public void anUnreadableNetworkIdentityIsNotReplacedDuringAnUpdate()throws Exception{
+  authorize("encargado",true,"Planta Norte");String profiles=auth.global.read("staffProfiles"),device=config.device;
+  android.content.SharedPreferences prefs=fixture.context.getSharedPreferences("vault",0);prefs.edit().putString("peerConfig","temporarily-unreadable").commit();
+  try{Companies.install(fixture.context);fail("Update replaced an unreadable installation identity");}catch(java.io.IOException expected){}
+  assertEquals("temporarily-unreadable",prefs.getString("peerConfig",""));assertEquals(profiles,auth.global.read("staffProfiles"));assertEquals(device,auth.global.read("sharedDevice"));assertEquals(1,new OfflineLedger(db,config).records().size());
+ }
  @Test public void loginIsVisibleWithSavedAccountsAndOnAnEmptyInstallation()throws Exception{
   authorize("encargado",true,"Planta Norte");StaffAccess.lock();android.app.Instrumentation i=InstrumentationRegistry.getInstrumentation();PeerDatabaseTest ui=new PeerDatabaseTest();
   StaffActivity saved=(StaffActivity)i.startActivitySync(new android.content.Intent(fixture.context,StaffActivity.class).putExtra("company","soboce").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));
