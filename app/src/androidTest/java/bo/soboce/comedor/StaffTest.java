@@ -64,10 +64,10 @@ public class StaffTest {
  @Test public void loginIsVisibleWithSavedAccountsAndOnAnEmptyInstallation()throws Exception{
   authorize("encargado",true,"Planta Norte");StaffAccess.lock();android.app.Instrumentation i=InstrumentationRegistry.getInstrumentation();PeerDatabaseTest ui=new PeerDatabaseTest();
   StaffActivity saved=(StaffActivity)i.startActivitySync(new android.content.Intent(fixture.context,StaffActivity.class).putExtra("company","soboce").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));
-  try{ui.waitText(saved,"Iniciar sesión");ui.waitText(saved,"Entrar · Encargado autorizado");ui.waitText(saved,"Ya tengo cuenta · recuperar acceso");ui.screenshot("32-login-cuenta-existente");}finally{i.runOnMainSync(saved::finish);}
+  try{ui.waitText(saved,"Iniciar sesión");ui.waitText(saved,"Usuario");ui.waitText(saved,"Contraseña");ui.waitText(saved,"Acceso anterior con PIN");i.runOnMainSync(()->ui.findText(saved.getWindow().getDecorView(),"Acceso anterior con PIN").performClick());ui.waitText(saved,"Entrar · Encargado autorizado");ui.screenshot("32-login-cuenta-existente");}finally{i.runOnMainSync(saved::finish);}
   auth.global.remove("staffProfiles");auth.global.remove("staffProfilesBackup");auth.global.remove("staffSelected");
   StaffActivity empty=(StaffActivity)i.startActivitySync(new android.content.Intent(fixture.context,StaffActivity.class).putExtra("company","soboce").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));
-  try{ui.waitText(empty,"Iniciar sesión");ui.waitText(empty,"Ya tengo cuenta · recuperar acceso");ui.screenshot("33-login-recuperacion");}finally{i.runOnMainSync(empty::finish);}
+  try{ui.waitText(empty,"Iniciar sesión");ui.waitText(empty,"Entrar");ui.waitText(empty,"Olvidé mi contraseña");ui.screenshot("33-login-contrasena");}finally{i.runOnMainSync(empty::finish);}
  }
  @Test public void migrationPreservesExistingDataPendingOperationsAndBillingWithoutAutoGrantingAdmin()throws Exception{
   assertEquals(2,db.rows("people").size());assertEquals(1,new OfflineLedger(db,config).records().size());assertFalse(auth.authorized());assertTrue(Companies.license(fixture.context,"soboce").allowed());

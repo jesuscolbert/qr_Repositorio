@@ -1,4 +1,5 @@
 // Account authority, independent of billing and tunnel leadership. No meal data lives here.
+import {loginOperation,username,credentials,unbound} from './password.mjs';
 const hex=/^[a-f0-9]{64}$/;
 const enc=new TextEncoder(), dec=new TextDecoder();
 export const b64=b=>{const a=new Uint8Array(b);let s='';for(let i=0;i<a.length;i+=8192)s+=String.fromCharCode(...a.subarray(i,i+8192));return btoa(s).replaceAll('+','-').replaceAll('/','_').replace(/=+$/,'');};
@@ -28,7 +29,8 @@ export async function authenticate(tx,envelope,route,env,now,{replay=true}={}){
 export function permission(user,action,plant){require(user.active&&(!plant||user.plants.includes(plant)),'No tienes permiso para esta planta.');require(user.role==='master'||user.permissions.includes(action),'Tu cuenta no tiene permiso para esta operación.');}
 async function directory(tx,env,now){const users=await tx.list({prefix:'staffUser:',limit:501});require(users.size<=500,'Se alcanzó el límite de cuentas.');return seal(env,{kind:'directory',cluster:policy(env).cluster,revision:await tx.get('staffRevision')||0,time:now,accounts:[...users.values()].map(x=>x.certificate)});}
 async function saveUser(tx,env,u,now,by){
- const revision=(await tx.get('staffRevision')||0)+1, user={...u,revision,issued:now};delete user.certificate;
+ const revision=(await tx.get('staffRevision')||0)+1, user={revision,issued:now};
+ for(const field of ['id','key','device','name','role','plants','permissions','active','username','passwordVersion','deleted'])if(u[field]!==undefined)user[field]=u[field];
  const certificate=await seal(env,{kind:'grant',cluster:policy(env).cluster,...user});user.certificate=certificate;
  await tx.put('staffUser:'+user.id,user);await tx.put('staffKey:'+await digest(user.key),user.id);await tx.put('staffRevision',revision);
  await tx.put('staffAudit:'+String(revision).padStart(12,'0'),{time:now,by,user:user.id,active:user.active,role:user.role,revision});return user;
@@ -37,6 +39,7 @@ export const defaultPermissions=role=>role==='encargado'?['scan','link','people'
 export async function staffOperation(tx,envelope,env,now){
  const r=await signedRequest(envelope,'staff',env,now),p=policy(env),hash=await digest(envelope.key);
  require(typeof r.action==='string');
+ if(['loginStart','loginFinish'].includes(r.action))return loginOperation(tx,r,envelope,env,now,{digest,saveUser,directory});
  if(r.action==='seed'){
   require(envelope.key===p.authority&&Array.isArray(r.items)&&r.items.length<=100,'Carga inicial no autorizada.');
   for(const item of r.items){require(hex.test(item.tag||'')&&p.plants.includes(item.plant));const old=await tx.get('staffSubject:'+item.tag);require(!old||old===item.plant,'La planta de un trabajador ya está definida.');await tx.put('staffSubject:'+item.tag,item.plant);}return {ok:true,count:r.items.length};
@@ -58,7 +61,7 @@ export async function staffOperation(tx,envelope,env,now){
   const expected=r.action==='claim'?env.STAFF_BOOTSTRAP_HASH:env.STAFF_RECOVERY_HASH;
   require(expected&&await digest(r.code)===expected,'Código maestro incorrecto.');
   const known=await tx.get('staffKey:'+hash);require(!known||known===id,'Este perfil ya pertenece a otra cuenta. Crea un perfil nuevo.');
-  const user=await saveUser(tx,env,{id,key:envelope.key,device:r.device,name:r.name.trim(),role:'master',plants:p.plants,permissions:defaultPermissions('master'),active:true},now,old?.id||'bootstrap');
+  const user=await saveUser(tx,env,{...old,id,key:envelope.key,device:r.device,name:r.name.trim(),role:'master',plants:p.plants,permissions:defaultPermissions('master'),active:true},now,old?.id||'bootstrap');
   await tx.put('staffMaster',id);await tx.put('staffEnabled',true);if(r.action==='recover')await tx.put('staffRecoveryUsed:'+await digest(r.code),true);
   await tx.delete('staffPending:'+hash);return {ok:true,certificate:user.certificate,directory:await directory(tx,env,now)};
  }
@@ -71,6 +74,31 @@ export async function staffOperation(tx,envelope,env,now){
  }
  const {user}=await authenticate(tx,envelope,'staff',env,now);
  require(user.role==='master','Solo el usuario maestro puede administrar cuentas.');
+ if(r.action==='createAccount'){
+  const name=username(r.username),password=credentials(r.password);require(!await tx.get('staffUsername:'+name),'Ese usuario ya está registrado.');
+  require(['admin','encargado'].includes(r.role)&&typeof r.name==='string'&&r.name.trim().length>=3&&r.name.trim().length<=100,'Nombre o rol inválidos.');
+  require(Array.isArray(r.plants)&&r.plants.length>0&&new Set(r.plants).size===r.plants.length&&r.plants.every(x=>p.plants.includes(x)),'Selecciona plantas válidas.');
+  require(Array.isArray(r.permissions)&&r.permissions.every(x=>defaultPermissions('admin').includes(x)),'Permisos inválidos.');
+  const id=crypto.randomUUID(),binding=await unbound();
+  const created=await saveUser(tx,env,{id,...binding,name:r.name.trim(),username:name,passwordVersion:1,role:r.role,plants:r.plants,permissions:r.role==='admin'?defaultPermissions('admin'):[...new Set([...defaultPermissions('encargado'),...r.permissions])],active:true},now,user.id);
+  await tx.put('staffUsername:'+name,id);await tx.put('staffPassword:'+id,{...password,version:1});
+  return {ok:true,certificate:created.certificate,directory:await directory(tx,env,now)};
+ }
+ if(r.action==='password'){
+  const target=await tx.get('staffUser:'+r.id);require(target&&!target.deleted,'Cuenta no disponible.');require(r.expected===target.revision,'La cuenta cambió. Actualiza y reintenta.');
+  const name=username(r.username),password=credentials(r.password),owner=await tx.get('staffUsername:'+name);require(!owner||owner===target.id,'Ese usuario ya está registrado.');
+  const old=await tx.get('staffPassword:'+target.id),version=(old?.version||0)+1;
+  // Initial migration retains the existing phone; a reset invalidates its old key.
+  const binding=old&&target.id!==user.id?await unbound():{};
+  const updated=await saveUser(tx,env,{...target,...binding,username:name,passwordVersion:version},now,user.id);
+  await tx.put('staffUsername:'+name,target.id);await tx.put('staffPassword:'+target.id,{...password,version});
+  return {ok:true,certificate:updated.certificate,directory:await directory(tx,env,now)};
+ }
+ if(r.action==='deleteAccount'){
+  const target=await tx.get('staffUser:'+r.id);require(target&&target.role!=='master','La cuenta maestra no se elimina.');require(target.revision===r.expected,'La cuenta cambió. Actualiza y reintenta.');
+  const updated=await saveUser(tx,env,{...target,active:false,deleted:true},now,user.id);await tx.delete('staffPassword:'+target.id);
+  return {ok:true,certificate:updated.certificate,directory:await directory(tx,env,now)};
+ }
  if(r.action==='list'){
   const pending=await tx.list({prefix:'staffPending:',limit:200});return {ok:true,directory:await directory(tx,env,now),pending:[...pending.entries()].filter(([,v])=>v.expires>=now).map(([k,v])=>({id:k.slice('staffPending:'.length),name:v.name,intent:v.intent||'new',expires:v.expires}))};
  }
@@ -85,7 +113,8 @@ export async function staffOperation(tx,envelope,env,now){
   await tx.delete('staffPending:'+r.request);return {ok:true,certificate:granted.certificate,directory:await directory(tx,env,now)};
  }
  if(r.action==='update'){
-  const target=await tx.get('staffUser:'+r.id);require(target&&target.role!=='master','No se puede desactivar ni reemplazar al maestro desde esta opción.');
+  const target=await tx.get('staffUser:'+r.id);require(target&&!target.deleted&&target.role!=='master','No se puede modificar una cuenta eliminada ni reemplazar al maestro desde esta opción.');
+  require(!r.request||!target.username,'Esta cuenta entra con usuario y contraseña. Restablece la contraseña si necesita recuperar su acceso.');
   require(r.expected===target.revision,'La cuenta cambió. Actualiza la lista y reintenta.');
   require(typeof r.active==='boolean'&&['admin','encargado'].includes(r.role)&&typeof r.name==='string'&&r.name.trim().length>=3&&r.name.trim().length<=100,'Cuenta inválida.');
   require(Array.isArray(r.plants)&&r.plants.length>0&&new Set(r.plants).size===r.plants.length&&r.plants.every(x=>p.plants.includes(x)),'Selecciona plantas válidas.');

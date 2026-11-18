@@ -45,7 +45,7 @@ export class LeaderLease {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if(request.method==='GET'&&url.pathname==='/health')return Response.json({service:'comedor-coordinador',accountsProtocol:1},{headers:{'Cache-Control':'no-store'}});
+    if(request.method==='GET'&&url.pathname==='/health')return Response.json({service:'comedor-coordinador',accountsProtocol:1,passwordLogin:1},{headers:{'Cache-Control':'no-store'}});
     if (request.method !== 'POST' || !['/lease','/wallet','/staff'].includes(url.pathname)) return new Response('Not found', {status: 404});
     // App-only secret, never a Cloudflare management token. Do not log requests.
     const supplied = request.headers.get('Authorization') || '';

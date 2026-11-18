@@ -1,9 +1,10 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {timingSafeEqual} from 'node:crypto';
+import {timingSafeEqual,pbkdf2Sync,createHmac,createHash,randomBytes} from 'node:crypto';
 import {deflateSync} from 'node:zlib';
 import worker,{LeaderLease} from '../backend/coordination/worker.mjs';
 import {staffOperation,authenticate,authorizeWallet,rosterBody,digest,b64,un64,rawToDer,verify} from '../backend/coordination/staff.mjs';
+import {base64,bytes,hash,hmac,equal,credentials} from '../backend/coordination/password.mjs';
 const now=1794930000000,cluster='a'.repeat(64),bootstrap='b'.repeat(64),recovery='c'.repeat(64),enc=new TextEncoder();
 class Store{
  data=new Map();async get(k){return structuredClone(this.data.get(k));}async put(k,v){this.data.set(k,structuredClone(v));}async delete(k){this.data.delete(k);}
@@ -130,4 +131,64 @@ test('new worker proof binds its registered plant and rejects a modified registr
 });
 test('compressed credentials reject corruption and oversized decompression',async()=>{
  await assert.rejects(rosterBody('SB5:invalid.unused'));await assert.rejects(rosterBody('SB5:'+b64(deflateSync('x'.repeat(9000)))+'.unused'),/demasiado grande/);
+});
+
+const password='Comedor-ñ-2026';
+function passwordRecord(secret=password){const salt=randomBytes(32),salted=pbkdf2Sync(secret.normalize('NFKC'),salt,600000,32,'sha256'),client=createHmac('sha256',salted).update('Client Key').digest();return {scheme:'SCRAM-SHA-256',iterations:600000,salt:salt.toString('base64'),storedKey:createHash('sha256').update(client).digest('base64'),serverKey:createHmac('sha256',salted).update('Server Key').digest('base64')};}
+function answerPassword(name,secret,nonce,serverFirst){const parts=serverFirst.split(','),salt=Buffer.from(parts[1].slice(2),'base64'),salted=pbkdf2Sync(secret.normalize('NFKC'),salt,600000,32,'sha256'),client=createHmac('sha256',salted).update('Client Key').digest(),stored=createHash('sha256').update(client).digest();const message='n='+name+',r='+nonce+','+serverFirst+',c=biws,r='+parts[0].slice(2),sig=createHmac('sha256',stored).update(message).digest();return {proof:Buffer.from(client.map((x,i)=>x^sig[i])).toString('base64'),serverSignature:createHmac('sha256',createHmac('sha256',salted).update('Server Key').digest()).update(message).digest('base64')};}
+async function createPasswordUser(s,name='operador.test',secret=password){const record=passwordRecord(secret);const reply=await s.call(s.master,{action:'createAccount',username:name,name:'Cuenta con contraseña',role:'encargado',plants:['Norte'],permissions:[],password:record});return {record,user:body(reply.certificate)};}
+async function startLogin(s,k,name='operador.test',secret=password,time=now){const nonce=await digest(crypto.randomUUID()),start=await s.call(k,{action:'loginStart',username:name,device:k.device,clientNonce:nonce},time);assert.equal(start.ok,true);return {start,answer:answerPassword(name.trim().toLowerCase(),secret,nonce,start.serverFirst)};}
+async function finishLogin(s,k,login,time=now){return s.call(k,{action:'loginFinish',challenge:login.start.challenge,proof:login.answer.proof},time);}
+test('SCRAM-SHA-256 calculations match the RFC 7677 published vector',async()=>{
+ const salted=pbkdf2Sync('pencil',Buffer.from('W22ZaJ0SNY7soEsUEjb6gQ==','base64'),4096,32,'sha256'),client=await hmac(salted,'Client Key'),stored=await hash(client);
+ const nonce='rOprNGfwEbeRWgbNEkqO%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0',message='n=user,r=rOprNGfwEbeRWgbNEkqO,r='+nonce+',s=W22ZaJ0SNY7soEsUEjb6gQ==,i=4096,c=biws,r='+nonce;
+ const sig=await hmac(stored,message),proof=client.map((x,i)=>x^sig[i]);assert.equal(base64(proof),'dHzbZapWIk4jUhN+Ute9ytag9zjfMHgsqmmiz7AndVQ=');assert.equal(base64(await hmac(await hmac(salted,'Server Key'),message)),'6rriTRBi23WpRR/wtup+mMhUZUn/dB5nLTJRsjl95G4=');assert.equal(equal(await hash(proof.map((x,i)=>x^sig[i])),stored),true);
+});
+test('only master creates password accounts; verifiers never enter grants, directories or audit records',async()=>{
+ const s=await setup(),u=await createPasswordUser(s,' Operador.Test '),admin=await enroll(s,'admin'),operator=await enroll(s);
+ assert.equal(u.user.username,'operador.test');assert.equal(u.user.passwordVersion,1);assert.equal(u.user.active,true);
+ for(const actor of [admin.k,operator.k])for(const action of ['createAccount','password','deleteAccount'])await assert.rejects(s.call(actor,{action}),/Solo el usuario maestro/);
+ await assert.rejects(createPasswordUser(s,'OPERADOR.TEST'),/ya está registrado/);
+ const publicValues=JSON.stringify([...s.tx.data].filter(([k])=>!k.startsWith('staffPassword:')));for(const secret of [u.record.storedKey,u.record.serverKey,password])assert.equal(publicValues.includes(secret),false);
+ const directory=body((await s.call(s.master,{action:'list'})).directory);for(const cert of directory.accounts){const grant=body(cert);for(const field of ['salt','storedKey','serverKey','password'])assert.equal(field in grant,false);}
+ assert.throws(()=>credentials({...u.record,iterations:1}));assert.throws(()=>credentials({...u.record,storedKey:'broken'}));
+});
+test('password login reuses the account and replaces a phone automatically without master approval',async()=>{
+ const s=await setup(),u=await createPasswordUser(s),first=await keys(),second=await keys();
+ const login=await startLogin(s,first),reply=await finishLogin(s,first,login);assert.equal(reply.ok,true);assert.equal(reply.serverSignature,login.answer.serverSignature);let signed=body(reply.certificate);
+ assert.equal(signed.id,u.user.id);assert.equal(signed.key,first.pub);assert.equal(signed.device,first.device);assert.equal(signed.role,'encargado');assert.deepEqual(signed.plants,['Norte']);
+ const same=await finishLogin(s,first,await startLogin(s,first));assert.equal(body(same.certificate).revision,signed.revision);
+ const moved=await finishLogin(s,second,await startLogin(s,second));assert.equal(body(moved.certificate).id,u.user.id);assert.equal(body(moved.certificate).key,second.pub);
+ await assert.rejects(authenticate(s.tx,await proof(first,{action:'status'},'lease'),'lease',s.env,now));assert.equal(body((await s.call(first,{action:'status'})).replacement).key,second.pub);
+ assert.equal((await authenticate(s.tx,await proof(second,{action:'status'},'lease'),'lease',s.env,now)).user.id,u.user.id);
+ assert.equal([...s.tx.data.keys()].filter(x=>x.startsWith('staffUser:')).length,2);
+});
+test('password reset preserves account history but rejects old passwords, proofs and phones',async()=>{
+ const s=await setup(),u=await createPasswordUser(s),phone=await keys();await finishLogin(s,phone,await startLogin(s,phone));const current=body((await s.call(phone,{action:'status'})).certificate),old=await startLogin(s,phone);
+ const replacement=passwordRecord('Nueva-clave-2027');const updated=body((await s.call(s.master,{action:'password',id:u.user.id,expected:current.revision,username:u.user.username,password:replacement})).certificate);
+ assert.equal(updated.id,u.user.id);assert.equal(updated.passwordVersion,2);assert.equal((await finishLogin(s,phone,old)).ok,false);await assert.rejects(authenticate(s.tx,await proof(phone,{action:'status'},'lease'),'lease',s.env,now));
+ assert.equal((await finishLogin(s,phone,await startLogin(s,phone))).ok,false);
+ const fresh=await finishLogin(s,phone,await startLogin(s,phone,'operador.test','Nueva-clave-2027'));assert.equal(fresh.ok,true);assert.equal(body(fresh.certificate).id,u.user.id);
+});
+test('master converts an existing PIN account without duplicating it and keeps its own recovery available',async()=>{
+ const s=await setup(),legacy=await enroll(s),record=passwordRecord();const result=await s.call(s.master,{action:'password',id:legacy.user.id,expected:legacy.user.revision,username:'existente',password:record});assert.equal(body(result.certificate).id,legacy.user.id);assert.equal(body(result.certificate).key,legacy.k.pub);
+ const master=body((await s.call(s.master,{action:'status'})).certificate);const own=await s.call(s.master,{action:'password',id:master.id,expected:master.revision,username:'principal',password:passwordRecord()});assert.equal(body(own.certificate).key,s.master.pub);assert.equal((await s.call(s.master,{action:'list'})).ok,true);
+ const newer=await keys();const recovered=body((await s.call(newer,{action:'recover',name:'Dueña principal',code:recovery,device:newer.device})).certificate);assert.equal(recovered.username,'principal');assert.equal(recovered.id,master.id);
+});
+test('deleting an account retains audit identity and prevents password sign-in and username reuse',async()=>{
+ const s=await setup(),u=await createPasswordUser(s),phone=await keys(),login=await startLogin(s,phone);
+ const result=await s.call(s.master,{action:'deleteAccount',id:u.user.id,expected:u.user.revision});const deleted=body(result.certificate);assert.equal(deleted.active,false);assert.equal(deleted.deleted,true);assert.equal(deleted.id,u.user.id);assert.equal(await s.tx.get('staffPassword:'+u.user.id),undefined);
+ assert.equal((await finishLogin(s,phone,login)).ok,false);assert.equal((await finishLogin(s,phone,await startLogin(s,phone))).ok,false);await assert.rejects(createPasswordUser(s),/ya está registrado/);
+ const master=body((await s.call(s.master,{action:'status'})).certificate);await assert.rejects(s.call(s.master,{action:'deleteAccount',id:master.id,expected:master.revision}),/maestra/);
+});
+test('login proofs are bound to the device key, expire and cannot be replayed',async()=>{
+ const s=await setup();await createPasswordUser(s);const phone=await keys(),other=await keys(),login=await startLogin(s,phone);
+ assert.equal((await finishLogin(s,other,login)).ok,false);assert.equal((await finishLogin(s,phone,login,now+120001)).ok,false);
+ const good=await startLogin(s,phone);assert.equal((await finishLogin(s,phone,good)).ok,true);assert.equal((await finishLogin(s,phone,good)).ok,false);
+ const unknown=await startLogin(s,other,'desconocido');assert.equal(Object.keys(unknown.start).join(','),Object.keys(good.start).join(','));assert.equal((await finishLogin(s,other,unknown)).ok,false);
+});
+test('failed password attempts and throttling survive a real coordinator transaction',async()=>{
+ const s=await setup();await createPasswordUser(s);const phone=await keys(),post=endpoint(s),now=Date.now();
+ for(let i=0;i<8;i++){const start=await(await post('/staff',await proof(phone,{action:'loginStart',username:'operador.test',device:phone.device,clientNonce:await digest(String(i))},'staff',now))).json();assert.equal(start.ok,true);const bad=await(await post('/staff',await proof(phone,{action:'loginFinish',challenge:start.challenge,proof:randomBytes(32).toString('base64')},'staff',now))).json();assert.equal(bad.ok,false);assert.equal(await s.tx.get('staffLoginChallenge:'+await digest(phone.pub)),undefined);}
+ const next=await(await post('/staff',await proof(phone,{action:'loginStart',username:'operador.test',device:phone.device,clientNonce:await digest('next')},'staff',now))).json();assert.equal(next.code,'LOGIN_WAIT');assert.equal((await s.tx.get('staffLoginLimit:name:'+await digest('operador.test'))).count,8);
 });
