@@ -4,9 +4,9 @@ La impresión PDF ofrece 3, 4, 5, 6, 7 y 8 cm por lado del **cuadrado QR**, incl
 
 | QR | Carta | Oficio | Legal |
 |---|---:|---:|---:|
-| 3 × 3 cm | 30 | 36 | 42 |
+| 3 × 3 cm | 32 | 36 | 42 |
 | 4 × 4 cm | 18 | 21 | 21 |
-| 5 × 5 cm | 9 | 12 | 12 |
+| 5 × 5 cm | 10 | 12 | 12 |
 | 6 × 6 cm | 9 | 10 | 12 |
 | 7 × 7 cm | 6 | 8 | 8 |
 | 8 × 8 cm | 4 | 6 | 6 |
