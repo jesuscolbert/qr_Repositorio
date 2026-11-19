@@ -20,9 +20,13 @@ import java.util.*;
 public class QrPrintTest {
     CompaniesTest fixture;PeerDatabase db;PeerConfig config;LicenseClient license;File folder;
     @Before public void setup()throws Exception {
+        // PDF generation runs with the print screen in the foreground. Keep that
+        // lifecycle during headless PDF tests instead of inheriting an expired
+        // background timer from earlier UI tests in the same instrumentation run.
+        InstrumentationRegistry.getInstrumentation().runOnMainSync(StaffAccess::started);
         fixture=new CompaniesTest();fixture.setup();java.security.KeyPair root=WalletTest.key();Companies.item(fixture.context,"soboce").getJSONObject("network").put("staffAuthority",bo.colbert.credential.WalletProtocol.publicText(root.getPublic()));Companies.install(fixture.context);fixture.permission("soboce",true);license=Companies.license(fixture.context,"soboce");config=fixture.config("soboce");
         StaffAccess auth=StaffAccess.attach(fixture.context,config);auth.create("Encargado de impresión","591234");auth=StaffAccess.attach(fixture.context,config);StaffTest signer=new StaffTest();signer.auth=auth;signer.config=config;signer.root=root;signer.now=fixture.now;signer.authorize("master",true,"Planta Norte","Planta Sur");db=new PeerDatabase(fixture.context,config);
-        for(int i=0;i<10;i++){JSONObject req=fixture.worker(i<7?"Planta Norte":"Planta Sur").put("document",String.format(Locale.ROOT,"%08d",10000+i)).put("name",i==0?"María José Álvarez Fernández de la Cruz - Nombre largo para verificar la tarjeta":"Trabajador de prueba "+i);PeerCards.request(db,config,req,fixture.now).getString("qr");}
+        for(int i=0;i<10;i++){JSONObject req=fixture.worker(i<7?"Planta Norte":"Planta Sur").put("document",String.format(Locale.ROOT,"%08d",10000+i)).put("name",i==0?"María José Álvarez Fernández de la Cruz - Nombre largo para verificar la tarjeta":"Trabajador de prueba "+i);JSONObject reply=PeerCards.request(db,config,req,fixture.now);assertTrue("Cannot prepare print fixture: "+reply.optString("error"),reply.optBoolean("ok"));assertFalse(reply.getString("qr").isEmpty());}
         db.save("people","SAP-000123",new JSONObject().put("id","SAP-000123").put("sap","000123").put("nombre","Álvarez López - personal SAP").put("planta","Planta Norte").put("activo",true).put("tipo","EMPLEADO").put("vence","").put("comidas","desayuno,almuerzo,cena"));
         db.save("people","inactive",new JSONObject().put("id","inactive").put("nombre","Inactivo excluido").put("planta","Planta Norte").put("activo",false));db.save("people","visitor",new JSONObject().put("id","visitor").put("nombre","Visitante excluido").put("planta","Planta Norte").put("activo",true).put("tipo","VISITA"));
         folder=new File(fixture.context.getExternalFilesDir(null),"pdf-tests");assertTrue(folder.isDirectory()||folder.mkdirs());
@@ -36,7 +40,7 @@ public class QrPrintTest {
                 String saved=new String(result.readAllBytes(),StandardCharsets.UTF_8);for(File file:Objects.requireNonNull(folder.listFiles()))assertTrue("Missing PDF artifact: "+file.getName(),saved.contains(file.getName()));
             }
         }}
-        finally{StaffAccess.lock();if(db!=null)db.close();if(fixture!=null)fixture.cleanup();}
+        finally{try{StaffAccess.lock();if(db!=null)db.close();if(fixture!=null)fixture.cleanup();}finally{InstrumentationRegistry.getInstrumentation().runOnMainSync(StaffAccess::stopped);}}
     }
     @Test public void allPaperAndQrSizesRenderAtPhysicalSizeWithoutRecordingMeals()throws Exception {
         List<QrPrintDocument.Group> groups=QrPrintData.snapshot(db,config,license,"",fixture.now);assertEquals(2,groups.size());assertEquals(8,groups.get(0).cards.size());assertEquals(3,groups.get(1).cards.size());assertEquals(0,new OfflineLedger(db,config).records().size());
