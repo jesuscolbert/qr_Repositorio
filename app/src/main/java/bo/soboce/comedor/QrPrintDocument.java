@@ -26,7 +26,7 @@ final class QrPrintDocument {
         final Paper paper;final int cm,width,height,columns,rows,perPage;final boolean landscape;final float qr,caption,cardWidth,cardHeight,left,top;
         Layout(Paper paper,int cm){
             if(paper==null||cm<MIN_CM||cm>MAX_CM)throw new IllegalArgumentException("Elige QR de 3 a 8 cm.");
-            this.paper=paper;this.cm=cm;qr=cm*CM;caption=cm<=4?36:44;cardWidth=qr+2*PADDING;cardHeight=qr+caption+2*PADDING;
+            this.paper=paper;this.cm=cm;qr=cm*CM;caption=cm<=4?44:52;cardWidth=qr+2*PADDING;cardHeight=qr+caption+2*PADDING;
             int vertical=columns(paper.width)*rows(paper.height),horizontal=columns(paper.height)*rows(paper.width);
             landscape=horizontal>vertical;width=landscape?paper.height:paper.width;height=landscape?paper.width:paper.height;
             columns=columns(width);rows=rows(height);perPage=columns*rows;
@@ -103,11 +103,28 @@ final class QrPrintDocument {
             if(!matrix.get(x,y)){x++;continue;}int start=x;while(x<matrix.getWidth()&&matrix.get(x,y))x++;modules.addRect(start,y,x,y+1,Path.Direction.CW);
         }
         Paint ink=new Paint();ink.setColor(Color.BLACK);ink.setAntiAlias(false);canvas.save();canvas.translate(box.left,box.top);canvas.scale(box.width()/matrix.getWidth(),box.height()/matrix.getHeight());canvas.drawPath(modules,ink);canvas.restore();
-        boolean small=layout.cm<=4;TextPaint name=new TextPaint(Paint.ANTI_ALIAS_FLAG);name.setColor(Color.BLACK);name.setTypeface(Typeface.create("sans-serif",Typeface.BOLD));name.setTextSize(small?8.5f:10);
-        StaticLayout label=StaticLayout.Builder.obtain(card.name,0,card.name.length(),name,(int)box.width()-4).setMaxLines(2).setEllipsize(TextUtils.TruncateAt.END).setIncludePad(false).setAlignment(android.text.Layout.Alignment.ALIGN_CENTER).build();
-        canvas.save();canvas.translate(box.left+2,box.bottom+2);label.draw(canvas);canvas.restore();
-        text(canvas,card.identity,box.left+2,box.bottom+(small?26:33),box.width()-4,small?8:9,true);
-        text(canvas,plant,box.left+2,box.bottom+(small?34:42),box.width()-4,small?7.5f:8,false);
+        Caption caption=new Caption(card.name,box.width()-4,layout);
+        canvas.save();canvas.translate(box.left+2,box.bottom+2);caption.name.draw(canvas);canvas.restore();
+        text(canvas,card.identity,box.left+2,box.bottom+caption.identityBaseline,box.width()-4,caption.identitySize,true);
+        text(canvas,plant,box.left+2,box.bottom+caption.plantBaseline,box.width()-4,caption.plantSize,false);
+    }
+    /** Use actual font metrics: two name lines must never collide with the identifier. */
+    static final class Caption {
+        final StaticLayout name;final float identitySize,plantSize,identityBaseline,plantBaseline,bottom;
+        Caption(String value,float width,Layout layout){
+            boolean small=layout.cm<=4;identitySize=small?8:9;plantSize=small?7.5f:8;
+            TextPaint title=new TextPaint(Paint.ANTI_ALIAS_FLAG);title.setColor(Color.BLACK);title.setTypeface(Typeface.create("sans-serif",Typeface.BOLD));
+            TextPaint identity=new TextPaint(title);identity.setTextSize(identitySize);Paint.FontMetrics idMetrics=identity.getFontMetrics();
+            TextPaint plant=new TextPaint(title);plant.setTypeface(Typeface.create("sans-serif",Typeface.NORMAL));plant.setTextSize(plantSize);Paint.FontMetrics plantMetrics=plant.getFontMetrics();
+            StaticLayout label=null;float id=0,site=0,end=0;int lines=2;
+            for(float size=small?8.5f:10;;size-=.5f){
+                title.setTextSize(size);label=StaticLayout.Builder.obtain(value,0,value.length(),title,(int)width).setMaxLines(lines).setEllipsize(TextUtils.TruncateAt.END).setIncludePad(false).setAlignment(android.text.Layout.Alignment.ALIGN_CENTER).build();
+                id=2+label.getHeight()+2-idMetrics.ascent;site=id+idMetrics.descent+2-plantMetrics.ascent;end=site+plantMetrics.descent+2;
+                if(end<=layout.caption)break;
+                if(size<=7.5f){if(lines==1)throw new IllegalArgumentException("El texto no cabe en la tarjeta.");lines=1;size=small?9:10.5f;}
+            }
+            name=label;identityBaseline=id;plantBaseline=site;bottom=end;
+        }
     }
     private static void text(Canvas canvas,String value,float x,float baseline,float width,float size,boolean bold){
         TextPaint p=new TextPaint(Paint.ANTI_ALIAS_FLAG);p.setColor(Color.BLACK);p.setTextSize(size);p.setTypeface(Typeface.create("sans-serif",bold?Typeface.BOLD:Typeface.NORMAL));

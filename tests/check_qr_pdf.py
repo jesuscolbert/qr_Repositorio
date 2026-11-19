@@ -13,7 +13,7 @@ def verify(folder):
     documents=json.loads((folder/'expected.json').read_text(encoding='utf-8'))
     assert {(d['paper'],d['cm']) for d in documents}=={
         (paper,cm) for paper in ['CARTA','OFICIO','LEGAL'] for cm in range(3,9)}
-    expected_capacity={'CARTA':[32,18,10,9,6,4],'OFICIO':[36,21,12,10,8,6],'LEGAL':[42,21,12,12,8,6]}
+    expected_capacity={'CARTA':[30,18,10,9,6,4],'OFICIO':[36,21,12,10,8,4],'LEGAL':[36,21,12,12,8,6]}
     count=0
     for document in documents:
         assert (folder/document['file']).is_file()

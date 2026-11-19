@@ -86,10 +86,10 @@ public class QrPrintTest {
     }
     @Test public void printScreenOffersSizesAndCreatesTheSelectedPlantPdf()throws Exception {
         android.app.Instrumentation instrumentation=InstrumentationRegistry.getInstrumentation();QrPrintActivity activity=(QrPrintActivity)instrumentation.startActivitySync(new android.content.Intent(fixture.context,QrPrintActivity.class).putExtra("company","soboce").putExtra("plant","Planta Norte").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));PeerDatabaseTest ui=new PeerDatabaseTest();
-        try{instrumentation.waitForIdleSync();instrumentation.runOnMainSync(()->{android.widget.Spinner size=(android.widget.Spinner)ui.findDescription(activity.getWindow().getDecorView(),"TAMAÑO DEL QR");assertEquals(6,size.getCount());assertEquals("3 x 3 cm",size.getItemAtPosition(0));assertEquals("8 x 8 cm",size.getItemAtPosition(5));size.setSelection(0);});ui.waitText(activity,"Hasta 32 QR por hoja");ui.screenshot("12-imprimir-qr-opciones");instrumentation.runOnMainSync(()->ui.findText(activity.getWindow().getDecorView(),"Generar PDF").performClick());long end=System.currentTimeMillis()+20000;while(activity.generated==null&&System.currentTimeMillis()<end)Thread.sleep(100);assertNotNull(activity.generated);assertTrue(activity.generated.isFile());try(ParcelFileDescriptor fd=ParcelFileDescriptor.open(activity.generated,ParcelFileDescriptor.MODE_READ_ONLY);PdfRenderer pdf=new PdfRenderer(fd)){assertEquals(1,pdf.getPageCount());}ui.screenshot("13-qr-pdf-listo");}finally{instrumentation.runOnMainSync(activity::finish);}
+        try{instrumentation.waitForIdleSync();instrumentation.runOnMainSync(()->{android.widget.Spinner size=(android.widget.Spinner)ui.findDescription(activity.getWindow().getDecorView(),"TAMAÑO DEL QR");assertEquals(6,size.getCount());assertEquals("3 x 3 cm",size.getItemAtPosition(0));assertEquals("8 x 8 cm",size.getItemAtPosition(5));size.setSelection(0);});ui.waitText(activity,"Hasta 30 QR por hoja");ui.screenshot("12-imprimir-qr-opciones");instrumentation.runOnMainSync(()->ui.findText(activity.getWindow().getDecorView(),"Generar PDF").performClick());long end=System.currentTimeMillis()+20000;while(activity.generated==null&&System.currentTimeMillis()<end)Thread.sleep(100);assertNotNull(activity.generated);assertTrue(activity.generated.isFile());try(ParcelFileDescriptor fd=ParcelFileDescriptor.open(activity.generated,ParcelFileDescriptor.MODE_READ_ONLY);PdfRenderer pdf=new PdfRenderer(fd)){assertEquals(1,pdf.getPageCount());}ui.screenshot("13-qr-pdf-listo");}finally{instrumentation.runOnMainSync(activity::finish);}
     }
     @Test public void allSizesMaximizeRegularGridWithinPrintMarginsWithoutOverlaps()throws Exception {
-        int[][] capacity={{32,18,10,9,6,4},{36,21,12,10,8,6},{42,21,12,12,8,6}};
+        int[][] capacity={{30,18,10,9,6,4},{36,21,12,10,8,4},{36,21,12,12,8,6}};
         for(QrPrintDocument.Paper paper:QrPrintDocument.Paper.values())for(int cm=3;cm<=8;cm++){
             QrPrintDocument.Layout l=new QrPrintDocument.Layout(paper,cm);assertEquals(capacity[paper.ordinal()][cm-3],l.perPage);
             int best=0;for(int turn=0;turn<2;turn++){int w=turn==0?paper.width:paper.height,h=turn==0?paper.height:paper.width;
@@ -107,5 +107,14 @@ public class QrPrintTest {
         List<QrPrintDocument.Group> sample=Collections.singletonList(new QrPrintDocument.Group("PLANTA DE EJEMPLO",full));assertEquals(2,QrPrintDocument.pages(sample,l,false));
         QrPrintDocument.write(new File(folder,"distribucion-completa-3cm.pdf"),"DEMOSTRACIÓN DE DISTRIBUCIÓN",sample,l,false,()->{});
         assertEquals(0,new OfflineLedger(db,config).records().size());
+    }
+    @Test public void captionFontMetricsKeepNamesIdentifiersAndPlantsApart()throws Exception {
+        for(int cm=3;cm<=8;cm++)for(String name:new String[]{"Trabajador de ejemplo 25","María José Álvarez Fernández de la Cruz - Nombre muy largo","José", "Álvarez López - personal SAP"}){
+            QrPrintDocument.Layout l=new QrPrintDocument.Layout(QrPrintDocument.Paper.CARTA,cm);QrPrintDocument.Caption c=new QrPrintDocument.Caption(name,l.qr-4,l);
+            Paint id=new Paint();id.setTypeface(Typeface.create("sans-serif",Typeface.BOLD));id.setTextSize(c.identitySize);Paint site=new Paint();site.setTypeface(Typeface.create("sans-serif",Typeface.NORMAL));site.setTextSize(c.plantSize);
+            assertTrue(c.identityBaseline+id.ascent()>=2+c.name.getHeight()+1.99f);
+            assertTrue(c.plantBaseline+site.ascent()>=c.identityBaseline+id.descent()+1.99f);
+            assertTrue(c.bottom<=l.caption);assertTrue(c.name.getPaint().getTextSize()>=7.5f);
+        }
     }
 }
