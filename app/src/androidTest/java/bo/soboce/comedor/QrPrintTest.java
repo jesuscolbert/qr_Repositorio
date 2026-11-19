@@ -54,7 +54,7 @@ public class QrPrintTest {
                         try{for(int i=0;i<sheet.size();i++){
                             RectF r=layout.qrBox(i);assertTrue(layout.cardBox(i).bottom<=layout.height-QrPrintDocument.MARGIN-QrPrintDocument.FOOTER+.01f);
                             int x=Math.round(r.left*scale),y=Math.round(r.top*scale),w=Math.round(r.width()*scale);int[] pixels=new int[w*w];bitmap.getPixels(pixels,0,w,x,y,w,w);
-                            QrPrintDocument.Card card=sheet.get(i).card;assertTrue(card.qr.startsWith("SB5:"));
+                            QrPrintDocument.Card card=sheet.get(i).card;assertTrue("Unexpected credential format for "+card.id,card.qr.startsWith(card.id.startsWith("SAP-")?"SB3:":"SB5:"));
                             assertEquals(card.id,PeerCards.resolve(db,config,card.qr,fixture.now).getString("id"));
                             try{String qr=new com.google.zxing.qrcode.QRCodeReader().decode(new BinaryBitmap(new HybridBinarizer(new RGBLuminanceSource(w,w,pixels))),Collections.singletonMap(DecodeHintType.TRY_HARDER,Boolean.TRUE)).getText();assertEquals(card.qr,qr);assertEquals(card.id,PeerCards.resolve(db,config,qr,fixture.now).getString("id"));}
                             catch(ReaderException failure){unreadable.add(file.getName()+" page="+index+" card="+card.id);}

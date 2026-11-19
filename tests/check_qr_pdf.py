@@ -27,7 +27,7 @@ def verify(folder):
             with Image.open(folder/(document['file']+f'-page-{number}.png')) as image:
                 assert image.size==(round(document['width']*scale),round(document['height']*scale))
                 for slot,card in enumerate(page['cards']):
-                    assert card['qr'].startswith('SB5:')
+                    assert card['qr'].startswith('SB3:' if card['id'].startswith('SAP-') else 'SB5:')
                     assert 0<card['x']<document['width']-qr and 0<card['y']<document['height']-qr
                     x=math.floor(card['x']*scale+.5)
                     y=math.floor(card['y']*scale+.5)
