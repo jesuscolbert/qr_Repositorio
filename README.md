@@ -1,3 +1,20 @@
+## Actualización 1.17.0: impresión de QR de 3 a 8 cm
+
+La impresión PDF ofrece 3, 4, 5, 6, 7 y 8 cm por lado del **cuadrado QR**, incluido su borde blanco. El nombre, carnet/SAP y planta quedan debajo, dentro de la tarjeta recortable. Se mantienen Carta, Oficio de 33,02 cm y Legal de 35,56 cm. La cuadrícula calcula filas y columnas y elige la orientación vertical u horizontal con mayor capacidad, sin reducir el QR. Conserva márgenes de 6 mm, líneas de recorte y texto legible.
+
+| QR | Carta | Oficio | Legal |
+|---|---:|---:|---:|
+| 3 × 3 cm | 30 | 36 | 42 |
+| 4 × 4 cm | 18 | 21 | 21 |
+| 5 × 5 cm | 9 | 12 | 12 |
+| 6 × 6 cm | 9 | 10 | 12 |
+| 7 × 7 cm | 6 | 8 | 8 |
+| 8 × 8 cm | 4 | 6 | 6 |
+
+Por defecto, al elegir todas las plantas sus trabajadores se colocan en bloques consecutivos aprovechando los huecos de la última hoja. **Separar cada planta en páginas nuevas** conserva la opción anterior. Cada tarjeta identifica su planta; se mantienen el orden por nombre dentro de cada planta y las restricciones de empresa, permisos y Cobros. El resumen muestra capacidad y orientación antes de generar. Imprimir al 100% / Tamaño real, sin ajustar a página.
+
+Las pruebas exportan los 18 diseños desde Android y comprueban a 300 ppp, con un lector independiente, los 198 QR firmados SB5 de los archivos generados. También comprueban límites, ausencia de solapamientos, páginas continuas/separadas y que imprimir no registre comidas. Actualizar encima de la app actual, sin desinstalar ni borrar datos.
+
 ## Actualización 1.16.1: acceso con huella visible y diagnóstico
 
 El menú tiene **Acceso con huella** para la cuenta maestra y los encargados. También aparece **Configurar acceso con huella** en el login y en Mi cuenta, incluso si no hay lector, huellas registradas o contraseña local. La pantalla explica el estado del dispositivo y de la cuenta, y permite abrir los ajustes de Android y volver a comprobar. No borra perfiles ni oculta el control cuando hay varios: indica su cantidad y mantiene el requisito de un único perfil personal.
